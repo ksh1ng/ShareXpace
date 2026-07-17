@@ -112,7 +112,7 @@ Bindings are declared in `.openai/hosting.json`: D1 as `DB` and R2 as `FILES`. H
 
 `pnpm test` performs a production build and source-level contract tests for authentication, MCP tools/resources, shared domain routing, exact token counting, estimate binding/claiming, stale-cache blocking, prompt-cache ordering, migration coverage, and the production UI. Live OpenAI calls are intentionally not made in CI; run an authenticated smoke test with a controlled API key after configuring the hosted environment.
 
-See [DEVELOPMENT.md](./DEVELOPMENT.md) for the file-to-flow handoff guide.
+See [DEVELOPMENT.md](./DEVELOPMENT.md) for the file-to-flow handoff guide and [DEMO_GUIDE.md](./DEMO_GUIDE.md) for the complete Chinese demo runbook, prompts, MCP examples and troubleshooting checklist.
 
 ## Official implementation references
 
