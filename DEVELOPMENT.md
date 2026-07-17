@@ -13,21 +13,25 @@ Never point both editions at the same D1 database or Sites `project_id`. Product
 
 ```mermaid
 sequenceDiagram
-  participant UI as app/page.tsx
-  participant Estimate as api/questions/estimate
+  participant Client as Web UI or MCP client
+  participant Gateway as Web API or /mcp
+  participant Relay as _lib/relay-service.ts
   participant Workspace as _lib/workspace.ts
   participant Model as _lib/model.ts
   participant OpenAI as OpenAI API
   participant D1 as D1
 
-  UI->>Estimate: prompt + billing mode + operation
-  Estimate->>Workspace: auth, validate, retrieve, classify
+  Client->>Gateway: prompt + operation
+  Gateway->>Relay: relayPreflight
+  Relay->>Workspace: auth, validate, retrieve, classify
   Workspace->>OpenAI: embeddings when required
-  Estimate->>Model: build exact planned request
+  Relay->>Model: build exact planned request
   Model->>OpenAI: /responses/input_tokens
   Model->>D1: short-lived token_estimates row
-  Estimate-->>UI: route + exact input + output ceiling
-  UI->>Model: submit with estimateId
+  Relay-->>Client: route + exact input + output ceiling + preflight ID
+  Client->>Gateway: relayExecute with preflight ID
+  Gateway->>Relay: shared execution service
+  Relay->>Model: validated execution
   Model->>Workspace: re-plan, validate, atomically claim
   Model->>OpenAI: /responses (RAG or full only)
   Model->>D1: answer, routing event, provider usage
@@ -55,8 +59,17 @@ The UI invalidates an estimate whenever the prompt or billing selection changes.
 | `api/chat/run` | Converts a shared message into an estimated agent task and posts the result back |
 | `api/files` | Validated R2 upload plus D1 metadata/knowledge record |
 | `api/questions/check` | Deprecated compatibility read; new clients use `estimate` |
+| `/mcp` | Authenticated JSON-RPC MCP endpoint with tools and resources |
 
 Every route uses `requireActor()` and `errorResponse()` from `workspace.ts`.
+
+### MCP gateway
+
+- `app/mcp/route.ts` owns MCP protocol handling, tool/resource descriptors, bearer authentication boundary, and tool-call audit events.
+- `app/api/_lib/relay-service.ts` is the transport-neutral application layer shared by MCP and Web API routes.
+- `relay_preflight` must precede `relay_execute`; direct execute attempts fail because no matching `token_estimates` authorization record exists.
+- `RELAY_MCP_ACCESS_TOKENS` maps independent bearer tokens to member identities. Never reuse a single token for all members in production.
+- MCP cannot prevent a third-party host from using its own model, but it guarantees every request spending the Relay Workspace Master key goes through the three-layer router.
 
 ### Shared domain layer
 
@@ -82,6 +95,8 @@ Every route uses `requireActor()` and `errorResponse()` from `workspace.ts`.
 - answer/version/audit persistence
 
 Keep retrieval and lifecycle rules out of React components. Keep provider payload construction in `model.ts` so preflight and generation cannot drift.
+
+`app/api/_lib/relay-service.ts` owns the end-to-end use cases (`relayPreflight`, `relayExecute`, `relayReuse`, refresh and search), so transports cannot bypass lifecycle policy by reimplementing database writes.
 
 ## Token accounting contract
 
@@ -116,6 +131,7 @@ The five knowledge types are `static`, `semi_dynamic`, `dynamic`, `transactional
 - `answer_cache`: exact normalized-question lookup.
 - `routing_events`: route counts, provider cached tokens, and avoided-generation estimates.
 - `model_calls`: provider prompt-cache audit.
+- `mcp_events`: MCP member/client activity, tool success and selected route.
 - `workspace_files` plus R2 `FILES`: uploaded object metadata and bytes.
 
 Request handlers call `ensureWorkspace()` only to verify required tables and initialize the cache-version row. They never create schema or insert demo content.

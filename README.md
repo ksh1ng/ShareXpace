@@ -1,8 +1,43 @@
 # Relay Production
 
-Relay is a shared AI workspace for teams and their personal agents. This directory is the production-oriented edition; the hackathon demo remains unchanged in `../team-memory`.
+Relay is a shared AI workspace and MCP gateway for teams and their personal agents. This directory is the production-oriented edition; the original seeded web demo remains unchanged in `../team-memory`.
 
-The production edition deliberately has no demo seeds, fabricated model answers, anonymous hosted fallback, shared demo database, or inherited Sites project ID. It requires migrated D1 storage, authenticated Sites requests, and either a workspace master OpenAI API key or a member-provided key.
+The production edition deliberately has no demo seeds, fabricated model answers, anonymous hosted fallback, or shared demo database. It requires migrated D1 storage and authenticated requests. Web members may use the Workspace Master OpenAI API key or a request-scoped personal key. MCP clients always use the Workspace Master key, so the server can enforce and audit the shared three-layer route.
+
+## Product architecture
+
+```mermaid
+flowchart LR
+  C[Codex] --> M[/Relay MCP /mcp/]
+  H[ChatGPT] --> M
+  I[IDE / other agent] --> M
+  W[Relay Web Dashboard] --> S[Relay domain service]
+  M --> S
+  S --> P[Required preflight]
+  P --> R{Three-layer router}
+  R -->|high + fresh| SC[Semantic Cache]
+  R -->|medium| RG[RAG generation]
+  R -->|low| FG[Full generation + Prompt Cache]
+  SC --> D[(D1 shared memory)]
+  RG --> D
+  FG --> D
+  D --> W
+```
+
+The Web API and MCP server do not maintain separate routing implementations. Both call `app/api/_lib/relay-service.ts`, which makes `relay_preflight` mandatory before any Relay-funded `relay_execute` call. The preflight is identity-bound, prompt-bound, expiring and single-use.
+
+## MCP server
+
+The stateless Streamable HTTP-compatible endpoint is `https://<relay-host>/mcp`. It exposes:
+
+- `relay_preflight` — semantic retrieval, TTL/version validation, route decision and input-token estimate.
+- `relay_execute` — consumes the preflight and returns Semantic Cache, RAG or Full Generation output.
+- `relay_search_memory` — read-only shared memory search.
+- `relay_refresh_preflight` and `relay_refresh` — refresh a sourced record while preserving the old version.
+- `relay_post_update` — return agent progress or results to the shared chat without an LLM call.
+- `relay_get_workspace` — read route, savings, memory and MCP activity state.
+
+Resources are available at `relay://workspace/<workspace-id>/{summary,memory,activity,savings}`. Configure a per-member bearer token in `RELAY_MCP_ACCESS_TOKENS`; the value is a JSON object mapping secret tokens to member names. MCP calls are recorded in `mcp_events`, and the Dashboard shows connected identities and audited calls.
 
 ## Token lifecycle
 
@@ -69,12 +104,13 @@ Apply every SQL file in `drizzle/` to the production D1 database before serving 
 | `RELAY_MAX_OUTPUT_TOKENS` | no | Generation output ceiling; default `1200` |
 | `RELAY_MAX_INPUT_TOKENS` | no | Workspace input safety limit; default `100000` |
 | `RELAY_ALLOW_LOCAL_ANONYMOUS` | local only | Explicitly permits a local anonymous actor |
+| `RELAY_MCP_ACCESS_TOKENS` | for MCP | Secret JSON map of bearer tokens to workspace member names |
 
 Bindings are declared in `.openai/hosting.json`: D1 as `DB` and R2 as `FILES`. Hosted access is private by default through Sites authentication.
 
 ## Verification
 
-`pnpm test` performs a production build and source-level contract tests for authentication, three-layer routing, exact token counting, estimate binding/claiming, stale-cache blocking, prompt-cache ordering, migration coverage, and the production UI. Live OpenAI calls are intentionally not made in CI; run an authenticated smoke test with a controlled API key after configuring the hosted environment.
+`pnpm test` performs a production build and source-level contract tests for authentication, MCP tools/resources, shared domain routing, exact token counting, estimate binding/claiming, stale-cache blocking, prompt-cache ordering, migration coverage, and the production UI. Live OpenAI calls are intentionally not made in CI; run an authenticated smoke test with a controlled API key after configuring the hosted environment.
 
 See [DEVELOPMENT.md](./DEVELOPMENT.md) for the file-to-flow handoff guide.
 
@@ -82,4 +118,5 @@ See [DEVELOPMENT.md](./DEVELOPMENT.md) for the file-to-flow handoff guide.
 
 - [OpenAI input token counting](https://platform.openai.com/docs/api-reference/responses/input-tokens)
 - [OpenAI prompt caching](https://platform.openai.com/docs/guides/prompt-caching)
+- [OpenAI Apps SDK MCP server quickstart](https://developers.openai.com/apps-sdk/quickstart#mcp-server-with-apps-sdk-resources)
 - [Prompt Cache: Modular Attention Reuse for Low-Latency Inference](https://proceedings.mlsys.org/paper_files/paper/2024/file/a66caa1703fe34705a4368c3014c1966-Paper-Conference.pdf)
