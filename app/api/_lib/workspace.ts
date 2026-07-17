@@ -291,7 +291,7 @@ export async function bumpKnowledgeVersion() {
 
 export async function recordRoutingEvent(input: {
   route: DefenseRoute;
-  action: "reuse" | "generate" | "refresh";
+  action: "reuse" | "generate" | "refresh" | "agent_handoff" | "agent_result";
   similarity?: number;
   actualCachedTokens?: number;
   estimatedTokensSaved?: number;
@@ -546,7 +546,7 @@ function cosineSimilarity(a: number[], b: number[]) {
   return left && right ? dot / (Math.sqrt(left) * Math.sqrt(right)) : 0;
 }
 
-export async function retrieveWorkspaceAnswers(question: string, apiKey: string, limit = 3) {
+export async function retrieveWorkspaceAnswers(question: string, apiKey?: string, limit = 3) {
   await ensureWorkspace();
   const { DB } = runtimeEnv();
   const id = workspaceId();
@@ -564,6 +564,20 @@ export async function retrieveWorkspaceAnswers(question: string, apiKey: string,
     .all<MemoryRow>()).results;
   if (!results.length) return { matches: [], embeddingInputTokens: 0 };
   const lexical = results.map((record) => ({ record, lexicalScore: similarity(question, `${record.title} ${record.summary ?? ""}`) }));
+
+  // MCP hosts already have an LLM. When Relay has no provider credential, keep
+  // routing local and deterministic instead of blocking the agent handoff.
+  if (!apiKey) {
+    const matches = lexical.map((item) => ({
+      ...item,
+      score: item.lexicalScore,
+      semanticScore: 0,
+      matchType: "similar" as const,
+      retrievalMode: "lexical" as const,
+      freshness: freshness(item.record),
+    })).sort((a, b) => b.score - a.score).slice(0, limit);
+    return { matches, embeddingInputTokens: 0 };
+  }
 
   const stored = await DB.prepare("SELECT record_id, embedding_json FROM record_embeddings WHERE workspace_id = ? AND model = 'text-embedding-3-small' AND dimensions = 256")
     .bind(id)
@@ -622,7 +636,7 @@ export function classifyDefenseRoute(
   return "rag";
 }
 
-export async function findBestMatch(question: string, apiKey: string) {
+export async function findBestMatch(question: string, apiKey?: string) {
   const retrieval = await retrieveWorkspaceAnswers(question, apiKey, 1);
   return { match: retrieval.matches[0] ?? null, embeddingInputTokens: retrieval.embeddingInputTokens };
 }

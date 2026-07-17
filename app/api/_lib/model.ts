@@ -80,7 +80,7 @@ function contextLine(record: MemoryRow) {
 
 async function buildWorkspacePlan(input: {
   question: string;
-  apiKey: string;
+  apiKey?: string;
   operation: TokenOperation;
   sourceUrl?: string | null;
   targetRecordId?: string | null;
@@ -158,6 +158,10 @@ function inputTokenPayload(plan: WorkspacePlan) {
   };
 }
 
+function approximateInputTokens(plan: WorkspacePlan) {
+  return Math.max(1, Math.ceil(JSON.stringify(inputTokenPayload(plan)).length / 4));
+}
+
 async function countInputTokens(apiKey: string, plan: WorkspacePlan) {
   const response = await fetch("https://api.openai.com/v1/responses/input_tokens", {
     method: "POST",
@@ -179,7 +183,9 @@ export async function estimateWorkspaceTokens(input: {
   sourceUrl?: string | null;
   targetRecordId?: string | null;
 }) {
-  const apiKey = resolveApiKey(input.billingMode, input.personalApiKey);
+  const apiKey = input.billingMode === "personal"
+    ? input.personalApiKey?.trim()
+    : runtimeEnv().OPENAI_API_KEY?.trim();
   const operation = input.operation ?? "auto";
   const plan = await buildWorkspacePlan({
     question: input.question,
@@ -189,7 +195,9 @@ export async function estimateWorkspaceTokens(input: {
     targetRecordId: input.targetRecordId,
   });
   const maxOutputTokens = tokenLimits().maxOutputTokens;
-  const estimatedInputTokens = plan.route === "semantic_cache" ? 0 : await countInputTokens(apiKey, plan);
+  const estimatedInputTokens = plan.route === "semantic_cache"
+    ? 0
+    : apiKey ? await countInputTokens(apiKey, plan) : approximateInputTokens(plan);
   if (estimatedInputTokens > tokenLimits().maxInputTokens) {
     throw new ApiError(`This prompt would use ${estimatedInputTokens.toLocaleString()} input tokens, above the workspace limit.`, 413, "input_token_limit_exceeded");
   }
@@ -205,7 +213,15 @@ export async function estimateWorkspaceTokens(input: {
     estimatedSavedTokens: plan.route === "semantic_cache" ? plan.best?.record.token_count ?? 0 : 0,
     retrievalInputTokens: plan.retrievalInputTokens,
   });
-  return { estimate, plan };
+  return {
+    estimate: {
+      ...estimate,
+      source: plan.route === "semantic_cache"
+        ? "semantic_cache" as const
+        : apiKey ? "openai_input_token_count" as const : "relay_local_estimate" as const,
+    },
+    plan,
+  };
 }
 
 export async function generateWorkspaceAnswer(input: {

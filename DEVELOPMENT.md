@@ -17,25 +17,25 @@ sequenceDiagram
   participant Gateway as Web API or /api/mcp
   participant Relay as _lib/relay-service.ts
   participant Workspace as _lib/workspace.ts
-  participant Model as _lib/model.ts
-  participant OpenAI as OpenAI API
+  participant Agent as Codex / host agent model
   participant D1 as D1
 
   Client->>Gateway: prompt + operation
   Gateway->>Relay: relayPreflight
   Relay->>Workspace: auth, validate, retrieve, classify
-  Workspace->>OpenAI: embeddings when required
-  Relay->>Model: build exact planned request
-  Model->>OpenAI: /responses/input_tokens
-  Model->>D1: short-lived token_estimates row
-  Relay-->>Client: route + exact input + output ceiling + preflight ID
+  Workspace->>Workspace: exact/lexical retrieval; embeddings when configured
+  Relay->>D1: short-lived token_estimates row
+  Relay-->>Client: route + estimate + preflight ID
   Client->>Gateway: relayExecute with preflight ID
-  Gateway->>Relay: shared execution service
-  Relay->>Model: validated execution
-  Model->>Workspace: re-plan, validate, atomically claim
-  Model->>OpenAI: /responses (RAG or full only)
-  Model->>D1: answer, routing event, provider usage
-  Model-->>UI: answer + actual usage
+  Gateway->>Relay: validate and atomically claim
+  alt Semantic Cache
+    Relay-->>Client: stored answer; no model call
+  else RAG or Full Generation
+    Relay-->>Client: agent_action_required + fresh context
+    Client->>Agent: generate using host model
+    Client->>Gateway: relay_submit_result
+    Gateway->>D1: answer + routing event + optional host usage
+  end
 ```
 
 ### UI
@@ -68,8 +68,10 @@ Every route uses `requireActor()` and `errorResponse()` from `workspace.ts`.
 - `app/api/mcp/route.ts` owns MCP protocol handling, tool/resource descriptors, bearer authentication boundary, and tool-call audit events.
 - `app/api/_lib/relay-service.ts` is the transport-neutral application layer shared by MCP and Web API routes.
 - `relay_preflight` must precede `relay_execute`; direct execute attempts fail because no matching `token_estimates` authorization record exists.
+- `relay_execute` never invokes a generation model for RAG/Full Generation. It returns `agent_action_required`, a bounded context payload, and `requiredNextTool: relay_submit_result`.
+- `relay_submit_result` must be called by the same MCP identity with the unchanged question. It stores the host-agent answer in memory and shared chat and consumes the preflight.
 - `RELAY_MCP_ACCESS_TOKENS` maps independent bearer tokens to member identities. Never reuse a single token for all members in production.
-- MCP cannot prevent a third-party host from using its own model, but it guarantees every request spending the Relay Workspace Master key goes through the three-layer router.
+- MCP cannot control how a third-party host performs its internal inference. Relay controls shared-memory access and requires the result-submission lifecycle before host output becomes reusable team knowledge.
 
 ### Shared domain layer
 
@@ -79,12 +81,12 @@ Every route uses `requireActor()` and `errorResponse()` from `workspace.ts`.
 - Sites identity extraction
 - workspace/schema readiness checks
 - TTL and direct-reuse policy
-- lexical + embedding retrieval and three-layer classification
+- exact/lexical retrieval without credentials, plus optional embedding retrieval, and three-layer classification
 - query/record embedding persistence
 - prompt estimate creation, validation, atomic claim, and final accounting
 - workspace analytics
 
-`app/api/_lib/model.ts` owns:
+`app/api/_lib/model.ts` remains the optional Web/API provider adapter and owns:
 
 - stable-first prompt construction
 - RAG versus full context selection
@@ -94,20 +96,20 @@ Every route uses `requireActor()` and `errorResponse()` from `workspace.ts`.
 - provider usage parsing
 - answer/version/audit persistence
 
-Keep retrieval and lifecycle rules out of React components. Keep provider payload construction in `model.ts` so preflight and generation cannot drift.
+The MCP gateway does not call `generateWorkspaceAnswer`; it uses `relayCreateAgentHandoff` and `relaySubmitAgentResult`. Keep retrieval and lifecycle rules out of React components.
 
-`app/api/_lib/relay-service.ts` owns the end-to-end use cases (`relayPreflight`, `relayExecute`, `relayReuse`, refresh and search), so transports cannot bypass lifecycle policy by reimplementing database writes.
+`app/api/_lib/relay-service.ts` owns the end-to-end use cases (`relayPreflight`, Semantic Cache reuse, `relayCreateAgentHandoff`, `relaySubmitAgentResult`, refresh and search), so transports cannot bypass lifecycle policy by reimplementing database writes.
 
 ## Token accounting contract
 
 `token_estimates` is an audit and authorization record, not only a UI cache.
 
-- `estimated_input_tokens`: exact main-request input count returned by OpenAI; zero for Semantic Cache.
+- `estimated_input_tokens`: exact provider count when configured, otherwise a labelled local approximation; zero for Semantic Cache.
 - `max_output_tokens`: configured ceiling, because future output cannot be known exactly.
 - `retrieval_input_tokens`: embedding tokens used before routing.
 - `claimed_at`: concurrency lock. Only one submission can claim an estimate.
-- `actual_input_tokens`, `actual_output_tokens`, `actual_total_tokens`: Responses API usage.
-- `actual_cached_tokens`: provider prompt-cache hit; not the same as semantic reuse savings.
+- `actual_input_tokens`, `actual_output_tokens`, `actual_total_tokens`: optional host-agent reported usage, with local estimates used when the MCP host does not expose usage.
+- `actual_cached_tokens`: optional host-reported prompt-cache hit; not the same as semantic reuse savings.
 - `actual_retrieval_input_tokens`: embedding usage accumulated across preflight/submission.
 - `estimated_tokens_saved`: avoided generation estimate for Semantic Cache.
 
@@ -116,8 +118,8 @@ An estimate is rejected if its actor, prompt hash, route, operation, target reco
 ## Three-layer router
 
 1. Semantic Cache: high similarity plus fresh/direct-reuse eligibility. Returns stored answer and makes no main LLM call.
-2. RAG: medium similarity or explicit “Generate with team knowledge.” Only matching valid summaries/sources enter dynamic context.
-3. Full Generation + Prompt Caching: low similarity or refresh. All valid workspace context is used, with static/internal decisions first and the current question last.
+2. RAG: medium similarity or explicit “Generate with team knowledge.” Relay returns only matching fresh summaries/sources to the host agent.
+3. Full Generation: low similarity or refresh. Relay returns the bounded valid Workspace context; the host agent decides how to use its own model and prompt cache.
 
 The five knowledge types are `static`, `semi_dynamic`, `dynamic`, `transactional`, and `internal_decision`. Freshness uses `generated_at`, `expires_at`, `allow_direct_reuse`, `requires_refresh`, and `superseded_by`.
 

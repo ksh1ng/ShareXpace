@@ -2,7 +2,7 @@
 
 Relay is a shared AI workspace and MCP gateway for teams and their personal agents. This directory is the production-oriented edition; the original seeded web demo remains unchanged in `../team-memory`.
 
-The production edition deliberately has no demo seeds, fabricated model answers, anonymous hosted fallback, or shared demo database. It requires migrated D1 storage and authenticated requests. Web members may use the Workspace Master OpenAI API key or a request-scoped personal key. MCP clients always use the Workspace Master key, so the server can enforce and audit the shared three-layer route.
+The production edition deliberately has no demo seeds, fabricated model answers, anonymous hosted fallback, or shared demo database. It requires migrated D1 storage and authenticated requests. For MCP clients, Relay is now a routing and shared-memory layer rather than an LLM proxy: Semantic Cache returns a stored answer, while RAG and Full Generation return an agent handoff so Codex, ChatGPT, or an IDE agent performs the generation with its own host model.
 
 ## Product architecture
 
@@ -16,22 +16,24 @@ flowchart LR
   S --> P[Required preflight]
   P --> R{Three-layer router}
   R -->|high + fresh| SC[Semantic Cache]
-  R -->|medium| RG[RAG generation]
-  R -->|low| FG[Full generation + Prompt Cache]
+  R -->|medium| RG[RAG agent handoff]
+  R -->|low| FG[Full-context agent handoff]
   SC --> D[(D1 shared memory)]
-  RG --> D
-  FG --> D
+  RG --> A[Host agent / its own model]
+  FG --> A
+  A -->|relay_submit_result| D
   D --> W
 ```
 
-The Web API and MCP server do not maintain separate routing implementations. Both call `app/api/_lib/relay-service.ts`, which makes `relay_preflight` mandatory before any Relay-funded `relay_execute` call. The preflight is identity-bound, prompt-bound, expiring and single-use.
+The Web API and MCP server share routing and freshness rules in `app/api/_lib/relay-service.ts`. MCP makes `relay_preflight` mandatory before `relay_execute`; RAG and Full Generation then require `relay_submit_result` after the host agent completes the work. The preflight is identity-bound, prompt-bound, expiring and single-use.
 
 ## MCP server
 
 The stateless Streamable HTTP-compatible endpoint is `https://<relay-host>/api/mcp`. It exposes:
 
 - `relay_preflight` — semantic retrieval, TTL/version validation, route decision and input-token estimate.
-- `relay_execute` — consumes the preflight and returns Semantic Cache, RAG or Full Generation output.
+- `relay_execute` — returns a Semantic Cache answer or an `agent_action_required` handoff containing fresh context and host-agent instructions.
+- `relay_submit_result` — stores the answer produced by the MCP host's model in shared memory and shared chat.
 - `relay_search_memory` — read-only shared memory search.
 - `relay_refresh_preflight` and `relay_refresh` — refresh a sourced record while preserving the old version.
 - `relay_post_update` — return agent progress or results to the shared chat without an LLM call.
@@ -43,10 +45,10 @@ Resources are available at `relay://workspace/<workspace-id>/{summary,memory,act
 
 Every agent action is a two-step transaction:
 
-1. `POST /api/questions/estimate` selects the defense route and uses OpenAI `POST /v1/responses/input_tokens` with the same model, instructions, tools, and input payload planned for generation. Semantic Cache reports zero main-model input. Retrieval embedding tokens are reported separately.
+1. Preflight selects the defense route. When a provider credential is available, Relay may use embeddings and exact input counting; without one it falls back to exact/lexical retrieval and a clearly labelled local estimate. Semantic Cache reports zero main-model input.
 2. The UI displays exact planned input tokens, the configured output ceiling, and the estimate expiry. Submission must include the short-lived estimate ID.
-3. The server validates actor, prompt fingerprint, route, operation, matched record, TTL, and single-use state, then atomically claims the estimate.
-4. After the route completes, the UI displays provider-reported input, output, total, cached input, cache-write, and retrieval tokens, plus the difference between planned and actual input.
+3. The server validates actor, prompt fingerprint, route, operation, matched record, TTL, and single-use state, then atomically claims the handoff.
+4. Semantic Cache finishes immediately. RAG/Full Generation returns context to the host agent, which generates with its own model and calls `relay_submit_result` to persist the answer and optional host-reported usage.
 
 An output token count cannot be known before generation, so the preflight shows `max_output_tokens`, not a fabricated prediction.
 
@@ -55,11 +57,11 @@ flowchart LR
   U[Member or personal agent] --> E[Token preflight]
   E --> C{Three-layer router}
   C -->|fresh high similarity| S[Semantic Cache\nno main LLM call]
-  C -->|medium similarity| R[RAG\nhistorical summaries + sources]
-  C -->|low similarity| F[Full Generation\nstable prefix + full valid context]
-  R --> O[GPT-5.6 Responses API]
+  C -->|medium similarity| R[RAG handoff\nhistorical summaries + sources]
+  C -->|low similarity| F[Full-context handoff\nall valid workspace knowledge]
+  R --> O[Codex / ChatGPT / IDE host model]
   F --> O
-  O --> P[Provider usage\ninput / output / cached]
+  O -->|relay_submit_result| P[Shared result + optional host usage]
   S --> P
   P --> D[D1 audit + workspace UI]
 ```
@@ -70,8 +72,8 @@ flowchart LR
 - Token estimates expire, are bound to the member and exact request, and are atomically single-use.
 - Stale, transactional, refresh-required, expired, or superseded records cannot be returned by Semantic Cache.
 - Refresh creates a new record version and preserves the old record as superseded.
-- Stable workspace context is placed before dynamic content to improve provider prompt-cache hits.
-- Personal API keys are sent only with the current request and are never written to D1 or returned by an API.
+- MCP RAG and Full Generation never call a generation model from Relay or require a Workspace Master generation key.
+- Host-agent results are not trusted as fresh until they are submitted through the bound handoff lifecycle.
 - Uploads have a 10 MB limit, an allow-listed MIME type, sanitized R2 keys, and metadata stored in D1.
 - D1 schema creation is migration-only. Request handlers do not silently create tables or insert seeds.
 
@@ -88,13 +90,13 @@ pnpm typecheck
 pnpm test
 ```
 
-Apply every SQL file in `drizzle/` to the production D1 database before serving traffic. Set `RELAY_ALLOW_LOCAL_ANONYMOUS=true` only for local development. Use a personal key in the UI or set `OPENAI_API_KEY` for workspace-master billing.
+Apply every SQL file in `drizzle/` to the production D1 database before serving traffic. Set `RELAY_ALLOW_LOCAL_ANONYMOUS=true` only for local development. `OPENAI_API_KEY` is optional for MCP: when present it improves semantic retrieval and exact token counting, but the host agent still performs RAG/Full generation.
 
 ## Environment variables
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `OPENAI_API_KEY` | for master billing | Workspace master key for embeddings, token counting, and GPT-5.6 |
+| `OPENAI_API_KEY` | optional | Improves embedding retrieval and exact input counting; MCP generation remains in the host agent |
 | `RELAY_APP_MODE` | yes | Set to `production` |
 | `RELAY_WORKSPACE_ID` | yes | Stable D1 partition and prompt-cache namespace |
 | `RELAY_SEMANTIC_CACHE_THRESHOLD` | no | High-similarity direct reuse threshold; default `0.78` |
@@ -110,7 +112,7 @@ Bindings are declared in `.openai/hosting.json`: D1 as `DB` and R2 as `FILES`. H
 
 ## Verification
 
-`pnpm test` performs a production build and source-level contract tests for authentication, MCP tools/resources, shared domain routing, exact token counting, estimate binding/claiming, stale-cache blocking, prompt-cache ordering, migration coverage, and the production UI. Live OpenAI calls are intentionally not made in CI; run an authenticated smoke test with a controlled API key after configuring the hosted environment.
+`pnpm test` performs a production build and source-level contract tests for authentication, MCP tools/resources, agent handoff/submission, shared routing, estimate binding/claiming, stale-cache blocking, migration coverage, and the production UI. Live provider calls are intentionally not made in CI.
 
 See [DEVELOPMENT.md](./DEVELOPMENT.md) for the file-to-flow handoff guide and [DEMO_GUIDE.md](./DEMO_GUIDE.md) for the complete Chinese demo runbook, prompts, MCP examples and troubleshooting checklist.
 
