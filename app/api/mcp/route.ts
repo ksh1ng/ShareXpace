@@ -1,4 +1,4 @@
-import { relayExecute, relayPreflight, relaySearchMemory } from "../api/_lib/relay-service";
+import { relayExecute, relayPreflight, relaySearchMemory } from "../_lib/relay-service";
 import {
   ApiError,
   getChatMessages,
@@ -7,7 +7,7 @@ import {
   requireMcpActor,
   runtimeEnv,
   workspaceId,
-} from "../api/_lib/workspace";
+} from "../_lib/workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -253,7 +253,7 @@ export async function OPTIONS() {
 }
 
 export async function GET() {
-  return Response.json({ name: "Relay Shared AI Workspace MCP Server", protocolVersion: PROTOCOL_VERSION, endpoint: "/mcp" }, { headers: JSON_HEADERS });
+  return Response.json({ name: "Relay Shared AI Workspace MCP Server", protocolVersion: PROTOCOL_VERSION, endpoint: "/api/mcp" }, { headers: JSON_HEADERS });
 }
 
 export async function POST(request: Request) {

@@ -77,7 +77,7 @@ test("three-layer routing and knowledge freshness remain enforced", async () => 
 
 test("MCP is a first-class gateway over the same Relay service", async () => {
   const [mcpRoute, relayService, workspace, schema, migration7, page] = await Promise.all([
-    read("../app/mcp/route.ts"),
+    read("../app/api/mcp/route.ts"),
     read("../app/api/_lib/relay-service.ts"),
     read("../app/api/_lib/workspace.ts"),
     read("../db/schema.ts"),

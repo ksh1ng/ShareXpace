@@ -482,7 +482,7 @@ export default function Home() {
             </div>
             <div className="gateway-status">
               <header><span className={mcp.enabled ? "online" : ""} /> <b>{mcp.enabled ? "MCP gateway ready" : "MCP token setup required"}</b></header>
-              <code>/mcp</code>
+              <code>/api/mcp</code>
               <div><span>Connected identities</span><strong>{mcp.members.length}</strong></div>
               <div><span>Audited tool calls</span><strong>{mcp.members.reduce((total, member) => total + member.calls, 0)}</strong></div>
               <small>Every Relay-funded generation requires a short-lived, identity-bound preflight.</small>
