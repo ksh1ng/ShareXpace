@@ -1,0 +1,1 @@
+ALTER TABLE `token_estimates` ADD `claimed_at` text;
