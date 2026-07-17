@@ -75,7 +75,7 @@ test("three-layer routing and knowledge freshness remain enforced", async () => 
   assert.match(refreshRoute, /relayExecute/);
 });
 
-test("MCP is a first-class gateway over the same Relay service", async () => {
+test("MCP routes cache locally and hands RAG/full work to the host agent", async () => {
   const [mcpRoute, relayService, workspace, schema, migration7, page] = await Promise.all([
     read("../app/api/mcp/route.ts"),
     read("../app/api/_lib/relay-service.ts"),
@@ -85,7 +85,7 @@ test("MCP is a first-class gateway over the same Relay service", async () => {
     read("../app/page.tsx"),
   ]);
 
-  for (const tool of ["relay_preflight", "relay_execute", "relay_search_memory", "relay_refresh", "relay_post_update", "relay_get_workspace"]) {
+  for (const tool of ["relay_preflight", "relay_execute", "relay_submit_result", "relay_search_memory", "relay_refresh", "relay_post_update", "relay_get_workspace"]) {
     assert.match(mcpRoute, new RegExp(tool));
   }
   assert.match(mcpRoute, /tools\/list/);
@@ -94,6 +94,12 @@ test("MCP is a first-class gateway over the same Relay service", async () => {
   assert.match(mcpRoute, /requireMcpActor/);
   assert.match(relayService, /relayPreflight/);
   assert.match(relayService, /relayExecute/);
+  assert.match(relayService, /relayCreateAgentHandoff/);
+  assert.match(relayService, /relaySubmitAgentResult/);
+  assert.match(relayService, /agent_action_required/);
+  assert.match(relayService, /modelCalledByRelay: false/);
+  assert.match(relayService, /requiredNextTool: "relay_submit_result"/);
+  assert.match(workspace, /keep\n  \/\/ routing local and deterministic|routing local and deterministic/);
   assert.match(workspace, /RELAY_MCP_ACCESS_TOKENS/);
   assert.match(schema, /mcpEvents/);
   assert.match(migration7, /CREATE TABLE `mcp_events`/);

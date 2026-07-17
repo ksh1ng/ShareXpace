@@ -2,6 +2,7 @@ import { estimateWorkspaceTokens, generateWorkspaceAnswer, type BillingMode } fr
 import {
   ApiError,
   bumpKnowledgeVersion,
+  cacheAnswer,
   claimTokenEstimate,
   consumeTokenEstimate,
   ensureWorkspace,
@@ -9,6 +10,7 @@ import {
   freshness,
   getWorkspaceState,
   recordRoutingEvent,
+  questionFingerprint,
   requireTokenEstimate,
   retrieveWorkspaceAnswers,
   routeThresholds,
@@ -228,10 +230,165 @@ export async function relayExecute(input: {
 export async function relaySearchMemory(input: { question: unknown; limit?: number }) {
   const question = validateQuestion(input.question);
   const key = runtimeEnv().OPENAI_API_KEY?.trim();
-  if (!key) throw new ApiError("The Workspace Master API key is required for semantic search.", 503, "master_api_key_unavailable");
   const result = await retrieveWorkspaceAnswers(question, key, Math.min(Math.max(input.limit ?? 5, 1), 10));
   return {
     embeddingInputTokens: result.embeddingInputTokens,
     matches: result.matches.map((match) => ({ ...presentMatch(match), route: match.freshness.directReuseAllowed ? "semantic_cache" as DefenseRoute : "rag" as DefenseRoute })),
+  };
+}
+
+function handoffContextLine(record: MemoryRow) {
+  return {
+    id: record.id,
+    title: record.title,
+    summary: record.summary ?? record.detail,
+    knowledgeType: record.knowledge_type,
+    version: record.version,
+    sourceUrl: record.source_url,
+    generatedAt: record.generated_at,
+    expiresAt: record.expires_at,
+  };
+}
+
+export async function relayCreateAgentHandoff(input: {
+  actor: string;
+  question: unknown;
+  estimateId: string;
+  agent?: string;
+  operation?: TokenOperation;
+  recordId?: string | null;
+}) {
+  await ensureWorkspace();
+  let question = validateQuestion(input.question);
+  const estimate = await runtimeEnv().DB.prepare("SELECT * FROM token_estimates WHERE id = ? AND workspace_id = ?")
+    .bind(input.estimateId, workspaceId())
+    .first<TokenEstimateRow>();
+  if (!estimate) throw new ApiError("Preflight not found. Run relay_preflight first.", 409, "estimate_not_found");
+  const operation = input.operation === "generate_with_team_knowledge" || input.operation === "refresh" ? input.operation : estimate.operation;
+  const refreshRecord = operation === "refresh" ? await refreshTarget(input.recordId ?? estimate.record_id ?? "") : null;
+  if (refreshRecord) question = refreshRecord.title;
+  if (estimate.route === "semantic_cache") {
+    return relayExecute({ actor: input.actor, question, estimateId: input.estimateId, operation });
+  }
+  await requireTokenEstimate({
+    estimateId: estimate.id,
+    actor: input.actor,
+    question,
+    route: estimate.route,
+    operation,
+    recordId: estimate.record_id,
+  });
+  await claimTokenEstimate(estimate.id);
+
+  const rows = (await runtimeEnv().DB.prepare("SELECT * FROM memory_records WHERE workspace_id = ? AND superseded_by IS NULL ORDER BY created_at DESC LIMIT 100")
+    .bind(workspaceId())
+    .all<MemoryRow>()).results.filter((record) => freshness(record).fresh);
+  const retrieved = await retrieveWorkspaceAnswers(question, runtimeEnv().OPENAI_API_KEY?.trim(), 5);
+  const ragIds = new Set(retrieved.matches.filter((match) => match.score >= routeThresholds().rag).map((match) => match.record.id));
+  const context = (estimate.route === "rag" ? rows.filter((record) => ragIds.has(record.id)) : rows)
+    .slice(0, estimate.route === "rag" ? 5 : 30)
+    .map(handoffContextLine);
+  await recordRoutingEvent({
+    route: estimate.route,
+    action: "agent_handoff",
+    similarity: retrieved.matches[0]?.score ?? 0,
+    recordId: estimate.record_id,
+  });
+  return {
+    status: "agent_action_required" as const,
+    route: estimate.route,
+    modelCalledByRelay: false,
+    instruction: estimate.route === "rag"
+      ? "Use your host model to answer the member request from the supplied fresh team knowledge. Then call relay_submit_result with this preflightId, the unchanged question, and your final answer."
+      : "Use your host model to complete this new workspace request. Treat the supplied workspace context as authoritative only when it is relevant and fresh. Then call relay_submit_result with this preflightId, the unchanged question, and your final answer.",
+    handoff: {
+      preflightId: estimate.id,
+      question,
+      agent: input.agent?.trim() || `${input.actor}'s Agent`,
+      systemInstructions: "You are an agent collaborating in a shared workspace. Do the requested work using your own host model. Do not claim stale records are current. Cite supplied source URLs when used. Return a concise actionable result for the whole group.",
+      contextMode: estimate.route === "rag" ? "retrieved_team_knowledge" : "full_workspace_context",
+      context,
+      refreshSourceUrl: refreshRecord?.source_url ?? null,
+      requiredNextTool: "relay_submit_result",
+      submissionRequired: true,
+    },
+    usage: {
+      source: "agent_handoff" as const,
+      modelCalled: false,
+      relayGenerationTokens: 0,
+      estimatedHostInputTokens: estimate.estimated_input_tokens,
+      retrievalInputTokens: estimate.retrieval_input_tokens + retrieved.embeddingInputTokens,
+    },
+  };
+}
+
+export async function relaySubmitAgentResult(input: {
+  actor: string;
+  preflightId: string;
+  question: unknown;
+  answer: unknown;
+  agent?: string;
+  model?: string;
+  knowledgeType?: KnowledgeType;
+  inputTokens?: number;
+  outputTokens?: number;
+  cachedInputTokens?: number;
+}) {
+  await ensureWorkspace();
+  const question = validateQuestion(input.question);
+  const answer = typeof input.answer === "string" ? input.answer.trim() : "";
+  if (!answer) throw new ApiError("Agent answer is required.", 400, "answer_required");
+  if (answer.length > 100_000) throw new ApiError("Agent answer is too long.", 413, "answer_too_long");
+  const estimate = await runtimeEnv().DB.prepare("SELECT * FROM token_estimates WHERE id = ? AND workspace_id = ?")
+    .bind(input.preflightId, workspaceId())
+    .first<TokenEstimateRow>();
+  if (!estimate) throw new ApiError("Agent handoff not found.", 409, "estimate_not_found");
+  if (estimate.actor !== input.actor) throw new ApiError("This handoff belongs to another member.", 403, "estimate_actor_mismatch");
+  if (!estimate.claimed_at) throw new ApiError("Call relay_execute to obtain the agent handoff first.", 409, "handoff_required");
+  if (estimate.consumed_at) throw new ApiError("This agent handoff was already submitted.", 409, "estimate_consumed");
+  if (estimate.question_fingerprint !== await questionFingerprint(question)) throw new ApiError("The submitted question does not match the handoff.", 409, "estimate_prompt_changed");
+  if (estimate.route === "semantic_cache") throw new ApiError("Semantic Cache results must use the cached answer.", 409, "semantic_cache_available");
+
+  const old = estimate.operation === "refresh" && estimate.record_id ? await refreshTarget(estimate.record_id) : null;
+  const createdAt = new Date();
+  const id = crypto.randomUUID();
+  const knowledgeType = old?.knowledge_type ?? input.knowledgeType ?? "dynamic";
+  const version = old ? old.version + 1 : 1;
+  const inputTokens = Math.max(0, Math.round(input.inputTokens ?? estimate.estimated_input_tokens));
+  const outputTokens = Math.max(0, Math.round(input.outputTokens ?? Math.ceil(answer.length / 4)));
+  const totalTokens = inputTokens + outputTokens;
+  const cachedInputTokens = Math.max(0, Math.round(input.cachedInputTokens ?? 0));
+  const summary = answer.length > 260 ? `${answer.slice(0, 257)}…` : answer;
+  const agent = input.agent?.trim() || `${input.actor}'s Agent`;
+  const model = input.model?.trim() || "host-agent-model";
+
+  await runtimeEnv().DB.prepare(`INSERT INTO memory_records
+    (id, workspace_id, kind, title, detail, author, agent, model, token_count, created_at,
+     knowledge_type, expires_at, generated_at, allow_direct_reuse, requires_refresh,
+     superseded_by, source_url, summary, version)
+    VALUES (?, ?, 'answer', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)`)
+    .bind(id, workspaceId(), question, answer, input.actor, agent, model, totalTokens, createdAt.toISOString(), knowledgeType,
+      expiresAtFor(knowledgeType, createdAt), createdAt.toISOString(), knowledgeType === "transactional" ? 0 : 1,
+      old?.source_url ?? null, summary, version)
+    .run();
+  if (old) {
+    await runtimeEnv().DB.prepare("UPDATE memory_records SET superseded_by = ?, requires_refresh = 1, allow_direct_reuse = 0 WHERE id = ? AND workspace_id = ?")
+      .bind(id, old.id, workspaceId()).run();
+    if (knowledgeType === "static" || knowledgeType === "internal_decision") await bumpKnowledgeVersion();
+  }
+  await cacheAnswer(question, id, createdAt.toISOString());
+  await recordRoutingEvent({ route: estimate.route, action: "agent_result", recordId: id, actualCachedTokens: cachedInputTokens });
+  await consumeTokenEstimate({ estimateId: estimate.id, actualInputTokens: inputTokens, actualOutputTokens: outputTokens, actualTotalTokens: totalTokens, actualCachedTokens: cachedInputTokens, actualRetrievalInputTokens: estimate.retrieval_input_tokens });
+  await runtimeEnv().DB.prepare(`INSERT INTO chat_messages
+    (id, workspace_id, author, message_type, content, agent, model, billing_mode, task_status, source_message_id, created_at)
+    VALUES (?, ?, ?, 'agent', ?, ?, ?, NULL, 'done', NULL, ?)`)
+    .bind(crypto.randomUUID(), workspaceId(), input.actor, answer, agent, model, createdAt.toISOString()).run();
+  const state = await getWorkspaceState();
+  return {
+    status: "stored" as const,
+    route: estimate.route,
+    record: presentMemoryRecord((await runtimeEnv().DB.prepare("SELECT * FROM memory_records WHERE id = ?").bind(id).first<MemoryRow>())!),
+    usage: { source: "agent_reported_or_estimated" as const, modelCalledByRelay: false, inputTokens, outputTokens, totalTokens, cachedInputTokens },
+    defense: state.defense,
   };
 }
