@@ -1,0 +1,22 @@
+CREATE TABLE `token_estimates` (
+	`id` text PRIMARY KEY NOT NULL,
+	`workspace_id` text NOT NULL,
+	`actor` text NOT NULL,
+	`question_fingerprint` text NOT NULL,
+	`operation` text NOT NULL,
+	`route` text NOT NULL,
+	`model` text NOT NULL,
+	`record_id` text,
+	`estimated_input_tokens` integer DEFAULT 0 NOT NULL,
+	`max_output_tokens` integer DEFAULT 0 NOT NULL,
+	`estimated_saved_tokens` integer DEFAULT 0 NOT NULL,
+	`retrieval_input_tokens` integer DEFAULT 0 NOT NULL,
+	`created_at` text NOT NULL,
+	`expires_at` text NOT NULL,
+	`consumed_at` text,
+	`actual_input_tokens` integer,
+	`actual_output_tokens` integer,
+	`actual_total_tokens` integer,
+	`actual_cached_tokens` integer,
+	`actual_retrieval_input_tokens` integer
+);
