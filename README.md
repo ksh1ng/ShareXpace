@@ -8,7 +8,7 @@ The production edition deliberately has no demo seeds, fabricated model answers,
 
 ```mermaid
 flowchart LR
-  C[Codex] --> M[/Relay MCP /mcp/]
+  C[Codex] --> M[/Relay MCP /api/mcp/]
   H[ChatGPT] --> M
   I[IDE / other agent] --> M
   W[Relay Web Dashboard] --> S[Relay domain service]
@@ -28,7 +28,7 @@ The Web API and MCP server do not maintain separate routing implementations. Bot
 
 ## MCP server
 
-The stateless Streamable HTTP-compatible endpoint is `https://<relay-host>/mcp`. It exposes:
+The stateless Streamable HTTP-compatible endpoint is `https://<relay-host>/api/mcp`. It exposes:
 
 - `relay_preflight` — semantic retrieval, TTL/version validation, route decision and input-token estimate.
 - `relay_execute` — consumes the preflight and returns Semantic Cache, RAG or Full Generation output.

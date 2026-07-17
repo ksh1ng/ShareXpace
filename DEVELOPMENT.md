@@ -14,7 +14,7 @@ Never point both editions at the same D1 database or Sites `project_id`. Product
 ```mermaid
 sequenceDiagram
   participant Client as Web UI or MCP client
-  participant Gateway as Web API or /mcp
+  participant Gateway as Web API or /api/mcp
   participant Relay as _lib/relay-service.ts
   participant Workspace as _lib/workspace.ts
   participant Model as _lib/model.ts
@@ -59,13 +59,13 @@ The UI invalidates an estimate whenever the prompt or billing selection changes.
 | `api/chat/run` | Converts a shared message into an estimated agent task and posts the result back |
 | `api/files` | Validated R2 upload plus D1 metadata/knowledge record |
 | `api/questions/check` | Deprecated compatibility read; new clients use `estimate` |
-| `/mcp` | Authenticated JSON-RPC MCP endpoint with tools and resources |
+| `/api/mcp` | Authenticated JSON-RPC MCP endpoint with tools and resources |
 
 Every route uses `requireActor()` and `errorResponse()` from `workspace.ts`.
 
 ### MCP gateway
 
-- `app/mcp/route.ts` owns MCP protocol handling, tool/resource descriptors, bearer authentication boundary, and tool-call audit events.
+- `app/api/mcp/route.ts` owns MCP protocol handling, tool/resource descriptors, bearer authentication boundary, and tool-call audit events.
 - `app/api/_lib/relay-service.ts` is the transport-neutral application layer shared by MCP and Web API routes.
 - `relay_preflight` must precede `relay_execute`; direct execute attempts fail because no matching `token_estimates` authorization record exists.
 - `RELAY_MCP_ACCESS_TOKENS` maps independent bearer tokens to member identities. Never reuse a single token for all members in production.
