@@ -1,0 +1,272 @@
+import { relayExecute, relayPreflight, relaySearchMemory } from "../api/_lib/relay-service";
+import {
+  ApiError,
+  getChatMessages,
+  getWorkspaceState,
+  recordMcpEvent,
+  requireMcpActor,
+  runtimeEnv,
+  workspaceId,
+} from "../api/_lib/workspace";
+
+export const dynamic = "force-dynamic";
+
+const PROTOCOL_VERSION = "2025-06-18";
+const JSON_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+  "Access-Control-Allow-Headers": "authorization, content-type, mcp-protocol-version, mcp-session-id",
+  "Access-Control-Expose-Headers": "Mcp-Session-Id",
+};
+
+type JsonRpcRequest = {
+  jsonrpc?: "2.0";
+  id?: string | number | null;
+  method?: string;
+  params?: Record<string, unknown>;
+};
+
+const knowledgeTypeSchema = {
+  type: "string",
+  enum: ["static", "semi_dynamic", "dynamic", "transactional", "internal_decision"],
+};
+
+const tools = [
+  {
+    name: "relay_preflight",
+    title: "Check team memory and estimate tokens",
+    description: "Required before relay_execute. Searches shared workspace memory, validates TTL and versions, selects Semantic Cache, RAG, or Full Generation, and returns a short-lived preflight ID with planned token usage.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        question: { type: "string", description: "The exact workspace question or task." },
+        operation: { type: "string", enum: ["auto", "generate_with_team_knowledge"], default: "auto" },
+      },
+      required: ["question"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: false },
+  },
+  {
+    name: "relay_execute",
+    title: "Execute through Relay",
+    description: "Executes an unexpired relay_preflight result. Semantic Cache returns a stored answer without the main LLM; RAG and Full Generation use the Workspace Master model key. Requests without a matching preflight are rejected.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        preflightId: { type: "string" },
+        question: { type: "string", description: "Must exactly match the preflight question." },
+        agent: { type: "string", description: "Agent name shown in shared activity." },
+        operation: { type: "string", enum: ["auto", "generate_with_team_knowledge"], default: "auto" },
+        knowledgeType: knowledgeTypeSchema,
+      },
+      required: ["preflightId", "question"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: false },
+  },
+  {
+    name: "relay_search_memory",
+    title: "Search shared team memory",
+    description: "Searches exact and semantically similar team answers, returning freshness and source metadata without generating a new answer.",
+    inputSchema: {
+      type: "object",
+      properties: { question: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 10, default: 5 } },
+      required: ["question"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+  },
+  {
+    name: "relay_refresh_preflight",
+    title: "Estimate a source refresh",
+    description: "Creates a required preflight for refreshing a stale sourced record. Pass the returned preflight ID to relay_refresh.",
+    inputSchema: {
+      type: "object",
+      properties: { recordId: { type: "string" } },
+      required: ["recordId"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: false },
+  },
+  {
+    name: "relay_refresh",
+    title: "Refresh knowledge from its source",
+    description: "Refreshes a sourced record after relay_refresh_preflight, preserving the old version and marking it superseded.",
+    inputSchema: {
+      type: "object",
+      properties: { preflightId: { type: "string" }, recordId: { type: "string" }, agent: { type: "string" } },
+      required: ["preflightId", "recordId"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: false },
+  },
+  {
+    name: "relay_post_update",
+    title: "Post an update to shared chat",
+    description: "Posts a human or agent progress update to the common workspace chat without calling a model.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        content: { type: "string", maxLength: 20000 },
+        agent: { type: "string" },
+        kind: { type: "string", enum: ["discussion", "agent"], default: "agent" },
+      },
+      required: ["content"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: false },
+  },
+  {
+    name: "relay_get_workspace",
+    title: "Read workspace status",
+    description: "Returns current route metrics, token savings, prompt-cache usage, connected MCP members, and recent non-stale knowledge.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
+  },
+];
+
+function clientName(request: Request) {
+  return (request.headers.get("mcp-client-name") || request.headers.get("user-agent") || "Unknown MCP client").slice(0, 120);
+}
+function result(id: JsonRpcRequest["id"], value: unknown) {
+  return { jsonrpc: "2.0", id: id ?? null, result: value };
+}
+
+function rpcError(id: JsonRpcRequest["id"], code: number, message: string, data?: unknown) {
+  return { jsonrpc: "2.0", id: id ?? null, error: { code, message, ...(data === undefined ? {} : { data }) } };
+}
+
+function toolResult(value: unknown, message = "Relay request completed.") {
+  return {
+    content: [{ type: "text", text: message }],
+    structuredContent: value,
+  };
+}
+
+async function workspaceResource(uri: string) {
+  const state = await getWorkspaceState();
+  const chat = uri.endsWith("/activity") ? await getChatMessages() : [];
+  if (uri.endsWith("/summary")) {
+    return { workspaceId: state.workspaceId, routes: state.defense.routes, tokensSaved: state.defense.estimatedTokensSaved, actualCachedTokens: state.defense.actualCachedTokens, members: state.mcp.members };
+  }
+  if (uri.endsWith("/memory")) {
+    return { records: state.records.filter((record) => !record.superseded_by && !record.requires_refresh).slice(0, 25).map((record) => ({ id: record.id, title: record.title, summary: record.summary, knowledgeType: record.knowledge_type, sourceUrl: record.source_url, expiresAt: record.expires_at })) };
+  }
+  if (uri.endsWith("/activity")) return { chat: chat.slice(-40), mcpEvents: state.mcp.events };
+  if (uri.endsWith("/savings")) return { defense: state.defense, promptCache: state.promptCache, duplicates: state.stats.duplicates };
+  throw new ApiError("Relay resource not found.", 404, "resource_not_found");
+}
+
+async function callTool(actor: string, name: string, args: Record<string, unknown>) {
+  if (name === "relay_preflight") {
+    return relayPreflight({ actor, question: args.question, operation: args.operation === "generate_with_team_knowledge" ? "generate_with_team_knowledge" : "auto" });
+  }
+  if (name === "relay_execute") {
+    if (typeof args.preflightId !== "string") throw new ApiError("preflightId is required.", 400, "estimate_required");
+    return relayExecute({
+      actor,
+      question: args.question,
+      estimateId: args.preflightId,
+      agent: typeof args.agent === "string" ? args.agent : undefined,
+      operation: args.operation === "generate_with_team_knowledge" ? "generate_with_team_knowledge" : "auto",
+      knowledgeType: typeof args.knowledgeType === "string" ? args.knowledgeType as never : undefined,
+    });
+  }
+  if (name === "relay_search_memory") return relaySearchMemory({ question: args.question, limit: typeof args.limit === "number" ? args.limit : undefined });
+  if (name === "relay_refresh_preflight") {
+    if (typeof args.recordId !== "string") throw new ApiError("recordId is required.", 400, "record_required");
+    return relayPreflight({ actor, question: "Refresh source", operation: "refresh", recordId: args.recordId });
+  }
+  if (name === "relay_refresh") {
+    if (typeof args.preflightId !== "string" || typeof args.recordId !== "string") throw new ApiError("preflightId and recordId are required.", 400, "refresh_input_required");
+    return relayExecute({ actor, question: "Refresh source", estimateId: args.preflightId, operation: "refresh", recordId: args.recordId, agent: typeof args.agent === "string" ? args.agent : undefined });
+  }
+  if (name === "relay_post_update") {
+    const content = typeof args.content === "string" ? args.content.trim() : "";
+    if (!content) throw new ApiError("content is required.", 400, "content_required");
+    const now = new Date().toISOString();
+    const id = crypto.randomUUID();
+    const kind = args.kind === "discussion" ? "discussion" : "agent";
+    const agent = typeof args.agent === "string" ? args.agent.trim() : `${actor}'s Agent`;
+    await runtimeEnv().DB.prepare(`INSERT INTO chat_messages
+      (id, workspace_id, author, message_type, content, agent, model, billing_mode, task_status, source_message_id, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, NULL, ?)`)
+      .bind(id, workspaceId(), actor, kind, content, kind === "agent" ? agent : null, kind === "agent" ? "done" : null, now)
+      .run();
+    return { id, author: actor, kind, content, agent: kind === "agent" ? agent : null, createdAt: now };
+  }
+  if (name === "relay_get_workspace") {
+    const state = await getWorkspaceState();
+    return { ...state, records: state.records.slice(0, 25).map((record) => ({ id: record.id, title: record.title, summary: record.summary, knowledgeType: record.knowledge_type, expiresAt: record.expires_at, supersededBy: record.superseded_by })) };
+  }
+  throw new ApiError(`Unknown Relay tool: ${name}`, 404, "tool_not_found");
+}
+
+async function handleRpc(request: Request, actor: string, call: JsonRpcRequest) {
+  const id = call.id;
+  if (call.jsonrpc !== "2.0" || !call.method) return rpcError(id, -32600, "Invalid Request");
+  if (call.method === "initialize") {
+    return result(id, {
+      protocolVersion: PROTOCOL_VERSION,
+      capabilities: { tools: { listChanged: false }, resources: { subscribe: false, listChanged: false } },
+      serverInfo: { name: "relay-shared-workspace", title: "Relay Shared AI Workspace", version: "0.2.0" },
+      instructions: "For workspace questions, always call relay_preflight before relay_execute. Never claim fresh team knowledge without checking Relay. Use relay_post_update to return progress or results to the shared chat.",
+    });
+  }
+  if (call.method === "ping") return result(id, {});
+  if (call.method === "tools/list") return result(id, { tools });
+  if (call.method === "resources/list") {
+    const base = `relay://workspace/${workspaceId()}`;
+    return result(id, { resources: [
+      { uri: `${base}/summary`, name: "Workspace summary", mimeType: "application/json" },
+      { uri: `${base}/memory`, name: "Recent valid team memory", mimeType: "application/json" },
+      { uri: `${base}/activity`, name: "Shared chat and agent activity", mimeType: "application/json" },
+      { uri: `${base}/savings`, name: "Three-layer token savings", mimeType: "application/json" },
+    ] });
+  }
+  if (call.method === "resources/read") {
+    const uri = typeof call.params?.uri === "string" ? call.params.uri : "";
+    const value = await workspaceResource(uri);
+    return result(id, { contents: [{ uri, mimeType: "application/json", text: JSON.stringify(value) }] });
+  }
+  if (call.method === "tools/call") {
+    const name = typeof call.params?.name === "string" ? call.params.name : "";
+    const args = call.params?.arguments && typeof call.params.arguments === "object" ? call.params.arguments as Record<string, unknown> : {};
+    try {
+      const value = await callTool(actor, name, args);
+      const route = value && typeof value === "object" && "route" in value ? (value as { route?: "semantic_cache" | "rag" | "full_generation" }).route : null;
+      await recordMcpEvent({ actor, clientName: clientName(request), method: call.method, toolName: name, success: true, route });
+      return result(id, toolResult(value, `${name} completed through Relay.`));
+    } catch (error) {
+      await recordMcpEvent({ actor, clientName: clientName(request), method: call.method, toolName: name, success: false });
+      const message = error instanceof Error ? error.message : "Relay tool failed.";
+      return result(id, { content: [{ type: "text", text: message }], isError: true, structuredContent: { code: error instanceof ApiError ? error.code : "internal_error" } });
+    }
+  }
+  if (call.method.startsWith("notifications/")) return null;
+  return rpcError(id, -32601, "Method not found");
+}
+
+export async function OPTIONS() {
+  return new Response(null, { status: 204, headers: JSON_HEADERS });
+}
+
+export async function GET() {
+  return Response.json({ name: "Relay Shared AI Workspace MCP Server", protocolVersion: PROTOCOL_VERSION, endpoint: "/mcp" }, { headers: JSON_HEADERS });
+}
+
+export async function POST(request: Request) {
+  try {
+    const actor = await requireMcpActor(request);
+    const payload = await request.json() as JsonRpcRequest | JsonRpcRequest[];
+    const calls = Array.isArray(payload) ? payload : [payload];
+    const responses = (await Promise.all(calls.map((call) => handleRpc(request, actor, call)))).filter(Boolean);
+    if (!responses.length) return new Response(null, { status: 202, headers: JSON_HEADERS });
+    return Response.json(Array.isArray(payload) ? responses : responses[0], { headers: JSON_HEADERS });
+  } catch (error) {
+    const status = error instanceof ApiError ? error.status : 500;
+    const response = rpcError(null, status === 401 ? -32001 : -32603, error instanceof Error ? error.message : "Relay MCP request failed.");
+    return Response.json(response, { status, headers: { ...JSON_HEADERS, ...(status === 401 ? { "WWW-Authenticate": "Bearer realm=\"Relay MCP\"" } : {}) } });
+  }
+}

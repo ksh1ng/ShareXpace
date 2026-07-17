@@ -31,6 +31,7 @@ export async function GET(request: Request) {
       stats: state.stats,
       promptCache: state.promptCache,
       defense: state.defense,
+      mcp: state.mcp,
       modelReady: state.modelReady,
       appMode: state.appMode,
       workspaceId: state.workspaceId,

@@ -18,6 +18,7 @@ type RuntimeEnv = {
   RELAY_MAX_OUTPUT_TOKENS?: string;
   RELAY_MAX_INPUT_TOKENS?: string;
   RELAY_ALLOW_LOCAL_ANONYMOUS?: string;
+  RELAY_MCP_ACCESS_TOKENS?: string;
 };
 
 export type MemoryRow = {
@@ -180,6 +181,39 @@ export function requireActor(request: Request) {
   throw new ApiError("Authentication is required.", 401, "authentication_required");
 }
 
+function configuredMcpTokens() {
+  const raw = runtimeEnv().RELAY_MCP_ACCESS_TOKENS?.trim();
+  if (!raw) return new Map<string, string>();
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return new Map(Object.entries(parsed).filter((entry): entry is [string, string] => Boolean(entry[0]) && typeof entry[1] === "string" && Boolean(entry[1].trim())));
+  } catch {
+    throw new ApiError("RELAY_MCP_ACCESS_TOKENS must be a JSON object mapping bearer tokens to member names.", 503, "mcp_auth_configuration_invalid");
+  }
+}
+
+async function sameSecret(left: string, right: string) {
+  const digest = async (value: string) => new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
+  const [a, b] = await Promise.all([digest(left), digest(right)]);
+  if (a.length !== b.length) return false;
+  let different = 0;
+  for (let index = 0; index < a.length; index += 1) different |= a[index] ^ b[index];
+  return different === 0;
+}
+
+export async function requireMcpActor(request: Request) {
+  const sitesActor = actorFrom(request);
+  if (sitesActor) return sitesActor;
+  const authorization = request.headers.get("authorization") ?? "";
+  const supplied = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
+  const configured = configuredMcpTokens();
+  for (const [token, actor] of configured) {
+    if (supplied && await sameSecret(token, supplied)) return actor.trim();
+  }
+  if (runtimeEnv().RELAY_ALLOW_LOCAL_ANONYMOUS === "true") return "Local MCP Developer";
+  throw new ApiError("A valid Relay MCP bearer token is required.", 401, "mcp_authentication_required");
+}
+
 export function validateQuestion(value: unknown) {
   const question = typeof value === "string" ? value.trim() : "";
   if (!question) throw new ApiError("Question is required.", 400, "question_required");
@@ -275,6 +309,32 @@ export async function recordRoutingEvent(input: {
       input.actualCachedTokens ?? 0,
       input.estimatedTokensSaved ?? 0,
       input.recordId ?? null,
+      new Date().toISOString(),
+    )
+    .run();
+}
+
+export async function recordMcpEvent(input: {
+  actor: string;
+  clientName: string;
+  method: string;
+  toolName?: string | null;
+  success: boolean;
+  route?: DefenseRoute | null;
+}) {
+  await ensureWorkspace();
+  await runtimeEnv().DB.prepare(`INSERT INTO mcp_events
+    (id, workspace_id, actor, client_name, method, tool_name, success, route, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .bind(
+      crypto.randomUUID(),
+      workspaceId(),
+      input.actor,
+      input.clientName.slice(0, 120),
+      input.method.slice(0, 120),
+      input.toolName?.slice(0, 120) ?? null,
+      input.success ? 1 : 0,
+      input.route ?? null,
       new Date().toISOString(),
     )
     .run();
@@ -394,7 +454,7 @@ export async function getWorkspaceState() {
   await ensureWorkspace();
   const { DB, OPENAI_API_KEY } = runtimeEnv();
   const id = workspaceId();
-  const [records, files, reuse, model, cacheState, routes, estimated, preflights] = await Promise.all([
+  const [records, files, reuse, model, cacheState, routes, estimated, preflights, mcpMembers, mcpEvents] = await Promise.all([
     DB.prepare("SELECT * FROM memory_records WHERE workspace_id = ? ORDER BY created_at DESC LIMIT 80").bind(id).all<MemoryRow>(),
     DB.prepare("SELECT * FROM workspace_files WHERE workspace_id = ? ORDER BY created_at DESC LIMIT 30").bind(id).all<FileRow>(),
     DB.prepare("SELECT COUNT(*) AS duplicates FROM reuse_events WHERE workspace_id = ?").bind(id).first<{ duplicates: number }>(),
@@ -403,6 +463,8 @@ export async function getWorkspaceState() {
     DB.prepare("SELECT route, COUNT(*) AS count FROM routing_events WHERE workspace_id = ? GROUP BY route").bind(id).all<{ route: DefenseRoute; count: number }>(),
     DB.prepare("SELECT COALESCE(SUM(estimated_tokens_saved), 0) AS saved FROM routing_events WHERE workspace_id = ?").bind(id).first<{ saved: number }>(),
     DB.prepare("SELECT COUNT(*) AS count FROM token_estimates WHERE workspace_id = ?").bind(id).first<{ count: number }>(),
+    DB.prepare("SELECT actor, client_name, MAX(created_at) AS last_seen, COUNT(*) AS calls FROM mcp_events WHERE workspace_id = ? GROUP BY actor, client_name ORDER BY last_seen DESC LIMIT 20").bind(id).all<{ actor: string; client_name: string; last_seen: string; calls: number }>(),
+    DB.prepare("SELECT actor, client_name, method, tool_name, success, route, created_at FROM mcp_events WHERE workspace_id = ? ORDER BY created_at DESC LIMIT 30").bind(id).all<{ actor: string; client_name: string; method: string; tool_name: string | null; success: number; route: DefenseRoute | null; created_at: string }>(),
   ]);
   const routeCounts = { semanticCache: 0, rag: 0, fullGeneration: 0 };
   for (const row of routes.results) {
@@ -427,6 +489,11 @@ export async function getWorkspaceState() {
       knowledgeVersion: cacheState?.knowledge_version ?? 1,
     },
     modelReady: Boolean(OPENAI_API_KEY?.trim()),
+    mcp: {
+      enabled: configuredMcpTokens().size > 0 || runtimeEnv().RELAY_ALLOW_LOCAL_ANONYMOUS === "true",
+      members: mcpMembers.results.map((member) => ({ actor: member.actor, clientName: member.client_name, lastSeen: member.last_seen, calls: member.calls })),
+      events: mcpEvents.results.map((event) => ({ actor: event.actor, clientName: event.client_name, method: event.method, toolName: event.tool_name, success: Boolean(event.success), route: event.route, createdAt: event.created_at })),
+    },
     appMode: appMode(),
     workspaceId: id,
   };

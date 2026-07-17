@@ -126,3 +126,15 @@ export const tokenEstimates = sqliteTable("token_estimates", {
   actualCachedTokens: integer("actual_cached_tokens"),
   actualRetrievalInputTokens: integer("actual_retrieval_input_tokens"),
 });
+
+export const mcpEvents = sqliteTable("mcp_events", {
+  id: text("id").primaryKey(),
+  workspaceId: text("workspace_id").notNull(),
+  actor: text("actor").notNull(),
+  clientName: text("client_name").notNull(),
+  method: text("method").notNull(),
+  toolName: text("tool_name"),
+  success: integer("success").notNull().default(1),
+  route: text("route"),
+  createdAt: text("created_at").notNull(),
+});

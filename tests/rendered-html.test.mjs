@@ -21,7 +21,7 @@ test("production edition has exact preflight and provider-reported usage", async
   assert.match(page, /Provider cached input/);
   assert.match(page, /Retrieval embedding input/);
   assert.match(page, /inputEstimateDelta/);
-  assert.match(estimateRoute, /estimateWorkspaceTokens/);
+  assert.match(estimateRoute, /relayPreflight/);
   assert.match(model, /\/v1\/responses\/input_tokens/);
   assert.match(model, /inputTokenPayload\(plan\)/);
   assert.match(askRoute, /estimate_required/);
@@ -53,9 +53,10 @@ test("estimate is identity-bound, expiring, single-use, and atomically claimed",
 });
 
 test("three-layer routing and knowledge freshness remain enforced", async () => {
-  const [workspace, model, refreshRoute] = await Promise.all([
+  const [workspace, model, relayService, refreshRoute] = await Promise.all([
     read("../app/api/_lib/workspace.ts"),
     read("../app/api/_lib/model.ts"),
+    read("../app/api/_lib/relay-service.ts"),
     read("../app/api/knowledge/refresh/route.ts"),
   ]);
 
@@ -69,8 +70,35 @@ test("three-layer routing and knowledge freshness remain enforced", async () => 
   assert.ok(model.indexOf("Stable workspace policy and knowledge") < model.indexOf("Current member request"));
   assert.match(model, /prompt_cache_breakpoint/);
   assert.match(model, /prompt_cache_key/);
-  assert.match(refreshRoute, /superseded_by/);
-  assert.match(refreshRoute, /old\.version \+ 1/);
+  assert.match(relayService, /superseded_by/);
+  assert.match(relayService, /old\.version \+ 1/);
+  assert.match(refreshRoute, /relayExecute/);
+});
+
+test("MCP is a first-class gateway over the same Relay service", async () => {
+  const [mcpRoute, relayService, workspace, schema, migration7, page] = await Promise.all([
+    read("../app/mcp/route.ts"),
+    read("../app/api/_lib/relay-service.ts"),
+    read("../app/api/_lib/workspace.ts"),
+    read("../db/schema.ts"),
+    read("../drizzle/0007_mysterious_ironclad.sql"),
+    read("../app/page.tsx"),
+  ]);
+
+  for (const tool of ["relay_preflight", "relay_execute", "relay_search_memory", "relay_refresh", "relay_post_update", "relay_get_workspace"]) {
+    assert.match(mcpRoute, new RegExp(tool));
+  }
+  assert.match(mcpRoute, /tools\/list/);
+  assert.match(mcpRoute, /resources\/list/);
+  assert.match(mcpRoute, /resources\/read/);
+  assert.match(mcpRoute, /requireMcpActor/);
+  assert.match(relayService, /relayPreflight/);
+  assert.match(relayService, /relayExecute/);
+  assert.match(workspace, /RELAY_MCP_ACCESS_TOKENS/);
+  assert.match(schema, /mcpEvents/);
+  assert.match(migration7, /CREATE TABLE `mcp_events`/);
+  assert.match(page, /One workspace gateway for every agent/);
+  assert.match(page, /relay_preflight/);
 });
 
 test("production removes runtime demo bootstrap and requires identity", async () => {

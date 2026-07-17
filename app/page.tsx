@@ -111,6 +111,12 @@ type ChatMessage = {
   time: string;
 };
 
+type McpStatus = {
+  enabled: boolean;
+  members: Array<{ actor: string; clientName: string; lastSeen: string; calls: number }>;
+  events: Array<{ actor: string; clientName: string; method: string; toolName: string | null; success: boolean; route: DefenseRoute | null; createdAt: string }>;
+};
+
 const agents = [
   { initials: "YA", name: "Your agent", role: "Workspace collaborator", color: "gold" },
 ];
@@ -144,6 +150,7 @@ export default function Home() {
   const [chatBusy, setChatBusy] = useState(false);
   const [chatEstimate, setChatEstimate] = useState<{ question: string; estimate: TokenEstimate } | null>(null);
   const [pendingChatRun, setPendingChatRun] = useState<{ sourceMessageId: string; instruction: string; estimate: TokenEstimate } | null>(null);
+  const [mcp, setMcp] = useState<McpStatus>({ enabled: false, members: [], events: [] });
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -152,12 +159,13 @@ export default function Home() {
         if (!response.ok) throw new Error("The shared workspace could not be loaded.");
         return response.json();
       })
-      .then((data: { records: MemoryItem[]; stats: { tokensSaved: number; duplicates: number }; promptCache: PromptCache; defense: DefenseStats; modelReady: boolean }) => {
+      .then((data: { records: MemoryItem[]; stats: { tokensSaved: number; duplicates: number }; promptCache: PromptCache; defense: DefenseStats; modelReady: boolean; mcp: McpStatus }) => {
         setMemory(data.records);
         setDuplicates(data.stats.duplicates);
         setPromptCache(data.promptCache);
         setDefense(data.defense);
         setModelReady(data.modelReady);
+        setMcp(data.mcp);
       })
       .catch((reason: Error) => setError(reason.message))
       .finally(() => setLoadingWorkspace(false));
@@ -423,8 +431,8 @@ export default function Home() {
 
         <div className="sidebar-label">CONNECTED AGENTS</div>
         <div className="agent-list">
-          {agents.map((agent) => (
-            <button key={agent.name} type="button">
+          {[...agents, ...mcp.members.slice(0, 4).map((member) => ({ initials: member.actor.slice(0, 2).toUpperCase(), name: member.actor, role: member.clientName, color: "lime" }))].map((agent, index) => (
+            <button key={`${agent.name}-${index}`} type="button">
               <span className={`avatar ${agent.color}`}>{agent.initials}</span>
               <span><b>{agent.name}</b><small>{agent.role}</small></span>
               <i className="online" />
@@ -462,6 +470,22 @@ export default function Home() {
               <p>estimated tokens saved from {duplicates} direct answer reuses</p>
               <div className="cache-summary"><span>Actual cached</span><b>{defense.actualCachedTokens.toLocaleString()} input tokens</b><small>provider-reported prompt cache · knowledge v{promptCache.knowledgeVersion}</small></div>
               <div className="route-counts"><span>Semantic <b>{defense.routes.semanticCache}</b></span><span>RAG <b>{defense.routes.rag}</b></span><span>Full <b>{defense.routes.fullGeneration}</b></span></div>
+            </div>
+          </section>
+
+          <section className="mcp-gateway" aria-labelledby="mcp-title">
+            <div className="gateway-copy">
+              <p className="eyebrow">STANDARD AGENT ACCESS</p>
+              <h2 id="mcp-title">One workspace gateway for every agent.</h2>
+              <p>Codex, ChatGPT, IDE agents and other MCP clients all reach the same memory, TTL policy and three-layer token router.</p>
+              <div className="gateway-flow"><span>Agent</span><b>→</b><span>relay_preflight</span><b>→</b><span>relay_execute</span><b>→</b><span>Shared result</span></div>
+            </div>
+            <div className="gateway-status">
+              <header><span className={mcp.enabled ? "online" : ""} /> <b>{mcp.enabled ? "MCP gateway ready" : "MCP token setup required"}</b></header>
+              <code>/mcp</code>
+              <div><span>Connected identities</span><strong>{mcp.members.length}</strong></div>
+              <div><span>Audited tool calls</span><strong>{mcp.members.reduce((total, member) => total + member.calls, 0)}</strong></div>
+              <small>Every Relay-funded generation requires a short-lived, identity-bound preflight.</small>
             </div>
           </section>
 

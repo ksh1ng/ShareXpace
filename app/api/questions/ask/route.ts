@@ -1,4 +1,5 @@
-import { generateWorkspaceAnswer, type BillingMode } from "../../_lib/model";
+import type { BillingMode } from "../../_lib/model";
+import { relayExecute } from "../../_lib/relay-service";
 import { ensureWorkspace, errorResponse, requireActor, validateQuestion, type TokenOperation } from "../../_lib/workspace";
 
 export async function POST(request: Request) {
@@ -16,10 +17,10 @@ export async function POST(request: Request) {
     const question = validateQuestion(body.question);
     if (!body.estimateId) return Response.json({ error: "Estimate tokens before sending.", code: "estimate_required" }, { status: 428 });
     const operation: TokenOperation = body.operation === "generate_with_team_knowledge" ? body.operation : "auto";
-    const result = await generateWorkspaceAnswer({
+    const result = await relayExecute({
       question,
       actor,
-      agent: body.agent?.trim() || `${actor}'s Agent`,
+      agent: body.agent,
       billingMode: body.billingMode === "personal" ? "personal" : "master",
       personalApiKey: body.personalApiKey,
       estimateId: body.estimateId,
