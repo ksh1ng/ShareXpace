@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { lexicalSimilarity } from "./retrieval-scoring";
 
 export type KnowledgeType = "static" | "semi_dynamic" | "dynamic" | "transactional" | "internal_decision";
 export type DefenseRoute = "semantic_cache" | "rag" | "full_generation";
@@ -15,6 +16,8 @@ type RuntimeEnv = {
   RELAY_WORKSPACE_ID?: string;
   RELAY_WORKSPACE_NAME?: string;
   RELAY_SEMANTIC_CACHE_THRESHOLD?: string;
+  RELAY_SEMANTIC_EMBEDDING_THRESHOLD?: string;
+  RELAY_LEXICAL_CACHE_THRESHOLD?: string;
   RELAY_RAG_THRESHOLD?: string;
   RELAY_DEFAULT_TTL_HOURS?: string;
   RELAY_TOKEN_ESTIMATE_TTL_SECONDS?: string;
@@ -140,6 +143,8 @@ export function routeThresholds() {
   const current = runtimeEnv();
   return {
     semantic: numberSetting(current.RELAY_SEMANTIC_CACHE_THRESHOLD, 0.78),
+    semanticEmbedding: numberSetting(current.RELAY_SEMANTIC_EMBEDDING_THRESHOLD, 0.80),
+    lexicalCache: numberSetting(current.RELAY_LEXICAL_CACHE_THRESHOLD, 0.88),
     rag: numberSetting(current.RELAY_RAG_THRESHOLD, 0.42),
   };
 }
@@ -528,21 +533,6 @@ export async function getWorkspaceState() {
   };
 }
 
-const STOP_WORDS = new Set(["a", "an", "and", "are", "best", "do", "for", "how", "i", "is", "of", "our", "the", "to", "we", "what", "which", "with"]);
-const SYNONYMS: Record<string, string> = { jr: "rail", railway: "rail", train: "rail", trains: "rail", ticket: "pass", tickets: "pass", travelling: "travel" };
-
-function terms(value: string) {
-  return new Set(value.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean).map((term) => SYNONYMS[term] ?? term).filter((term) => !STOP_WORDS.has(term)));
-}
-
-export function similarity(left: string, right: string) {
-  const a = terms(left);
-  const b = terms(right);
-  if (!a.size || !b.size) return 0;
-  const intersection = [...a].filter((term) => b.has(term)).length;
-  return Math.min(0.98, (intersection / Math.min(a.size, b.size)) * 0.82 + (intersection / new Set([...a, ...b]).size) * 0.18);
-}
-
 type EmbeddingResponse = {
   data?: Array<{ index: number; embedding: number[] }>;
   usage?: { prompt_tokens?: number; total_tokens?: number };
@@ -656,7 +646,7 @@ export async function retrieveWorkspaceAnswers(question: string, apiKey?: string
     .bind(id)
     .all<MemoryRow>()).results;
   if (!results.length) return { matches: [], embeddingInputTokens: 0 };
-  const lexical = results.map((record) => ({ record, lexicalScore: similarity(question, `${record.title} ${record.summary ?? ""}`) }));
+  const lexical = results.map((record) => ({ record, lexicalScore: lexicalSimilarity(question, `${record.title} ${record.summary ?? ""}`) }));
 
   // MCP hosts already have an LLM. When Relay has no embedding credential, keep
   // routing local and deterministic instead of blocking the agent handoff.
@@ -731,12 +721,23 @@ export function classifyDefenseRoute(
   // explicitly requested a revised version built from current team knowledge.
   if (operation === "rag_refresh") return "rag";
   const thresholds = routeThresholds();
-  if (!match || match.score < thresholds.rag) return "full_generation";
+  if (!match) return "full_generation";
   // A fresh exact fingerprint is deterministic team memory, so it always wins
   // over a client accidentally carrying forward the RAG demo operation.
   if (match.matchType === "exact" && match.freshness.directReuseAllowed) return "semantic_cache";
   if (operation === "generate_with_team_knowledge") return "rag";
-  if (match.score >= thresholds.semantic && match.freshness.directReuseAllowed) return "semantic_cache";
+  // A high raw embedding score is independently sufficient. Do not let small
+  // wording/number differences in the lexical component dilute a strong
+  // paraphrase below the blended Hybrid threshold.
+  if (
+    match.freshness.directReuseAllowed &&
+    (
+      match.semanticScore >= thresholds.semanticEmbedding ||
+      match.lexicalScore >= thresholds.lexicalCache ||
+      match.score >= thresholds.semantic
+    )
+  ) return "semantic_cache";
+  if (match.score < thresholds.rag) return "full_generation";
   return "rag";
 }
 

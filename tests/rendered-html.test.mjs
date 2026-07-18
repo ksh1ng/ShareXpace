@@ -3,6 +3,8 @@ import { access, readFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 
+import { lexicalSimilarity } from "../app/api/_lib/retrieval-scoring.ts";
+
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
 test("production edition has exact preflight and provider-reported usage", async () => {
@@ -67,6 +69,15 @@ test("three-layer routing and knowledge freshness remain enforced", async () => 
   assert.match(workspace, /semantic_cache/);
   assert.match(workspace, /full_generation/);
   assert.match(workspace, /match\.matchType === "exact" && match\.freshness\.directReuseAllowed/);
+  assert.match(workspace, /semanticEmbedding: numberSetting\(current\.RELAY_SEMANTIC_EMBEDDING_THRESHOLD, 0\.80\)/);
+  assert.match(workspace, /lexicalCache: numberSetting\(current\.RELAY_LEXICAL_CACHE_THRESHOLD, 0\.88\)/);
+  assert.match(workspace, /match\.semanticScore >= thresholds\.semanticEmbedding/);
+  assert.match(workspace, /match\.lexicalScore >= thresholds\.lexicalCache/);
+  assert.ok(
+    workspace.indexOf("match.semanticScore >= thresholds.semanticEmbedding") <
+      workspace.indexOf("match.score < thresholds.rag", workspace.indexOf("export function classifyDefenseRoute")),
+    "independent high-similarity signals must be evaluated before the blended low-score fallback",
+  );
   assert.ok(
     workspace.indexOf('match.matchType === "exact" && match.freshness.directReuseAllowed') <
       workspace.indexOf('operation === "generate_with_team_knowledge"', workspace.indexOf("export function classifyDefenseRoute")),
@@ -81,6 +92,12 @@ test("three-layer routing and knowledge freshness remain enforced", async () => 
   assert.match(relayService, /superseded_by/);
   assert.match(relayService, /old\.version \+ 1/);
   assert.match(refreshRoute, /relayExecute/);
+});
+
+test("Tokyo itinerary paraphrase remains eligible for conservative lexical cache reuse", () => {
+  const stored = "Create a five-day Tokyo itinerary for our team. Prioritize walkable neighborhoods, one day trip, and a moderate budget.";
+  const paraphrase = "Create a 5-day Tokyo itinerary for us. Prioritize walkable neighborhoods, 1 day trip, and a affordable budget.";
+  assert.ok(lexicalSimilarity(stored, paraphrase) >= 0.88);
 });
 
 test("MCP routes cache locally and hands RAG/full work to the host agent", async () => {

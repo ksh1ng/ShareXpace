@@ -397,6 +397,15 @@ Create a five-day Tokyo itinerary for our team, but adapt the existing plan for 
 
 ### Scene 3 — Semantic Cache
 
+以下兩句應視為同一個高相似度需求並走 `semantic_cache`（前提是舊紀錄仍在 TTL 內且允許直接重用）：
+
+```text
+Create a five-day Tokyo itinerary for our team. Prioritize walkable neighborhoods, one day trip, and a moderate budget.
+Create a 5-day Tokyo itinerary for us. Prioritize walkable neighborhoods, 1 day trip, and a affordable budget.
+```
+
+Relay 接受 Hybrid score 達設定門檻、raw embedding similarity 達 80%，或 normalized lexical similarity 達較保守的 88% 的 fresh match。數字寫法與 `moderate`／`affordable` 也會先做 lexical normalization；上述兩句的 normalized lexical score 約為 91%，因此即使 embedding provider 暫時失敗或分數偏保守也會走 Semantic Cache。
+
 Alice 或 Bob 再次輸入與 Alice 完全相同的問題：
 
 ```text

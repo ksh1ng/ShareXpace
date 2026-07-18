@@ -105,6 +105,8 @@ Apply every SQL file in `drizzle/` to the production D1 database before serving 
 | `RELAY_WORKSPACE_ID` | yes | Stable D1 partition and prompt-cache namespace |
 | `RELAY_WORKSPACE_NAME` | yes | Human-readable workspace name shown by the Dashboard and MCP workspace status |
 | `RELAY_SEMANTIC_CACHE_THRESHOLD` | no | High-similarity direct reuse threshold; default `0.78` |
+| `RELAY_SEMANTIC_EMBEDDING_THRESHOLD` | no | Raw embedding similarity that independently permits fresh direct reuse; default `0.80` |
+| `RELAY_LEXICAL_CACHE_THRESHOLD` | no | Conservative normalized lexical score that independently permits fresh direct reuse; default `0.88` |
 | `RELAY_RAG_THRESHOLD` | no | Medium-similarity RAG threshold; default `0.42` |
 | `RELAY_DEFAULT_TTL_HOURS` | no | Default TTL for dynamic knowledge; default `24` |
 | `RELAY_TOKEN_ESTIMATE_TTL_SECONDS` | no | Preflight validity window; minimum 60, default `300` |
@@ -117,6 +119,8 @@ Apply every SQL file in `drizzle/` to the production D1 database before serving 
 Bindings are declared in `.openai/hosting.json`: D1 as `DB` and R2 as `FILES`. Hosted access is private by default through Sites authentication.
 
 Embedding vectors for Workspace answers are generated once and cached in D1 by model and dimension. A query creates only one new embedding; exact duplicate questions bypass the embedding provider entirely. Provider failures degrade to lexical matching so MCP agents remain usable. Gemini uses the retrieval-specific query/document task types and 768 dimensions; OpenAI keeps the existing 256-dimensional `text-embedding-3-small` path.
+
+Semantic Cache eligibility accepts the configured Hybrid threshold, an independently high raw embedding score (80% by default), or a conservative normalized lexical score (88% by default), provided TTL and direct-reuse checks pass. Lexical matching normalizes common number words and equivalent budget wording, so paraphrases such as `five-day`/`5-day`, `one`/`1`, and `moderate`/`affordable` remain reusable even during an embedding-provider outage or conservative embedding result.
 
 ## Verification
 
