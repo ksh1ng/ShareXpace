@@ -110,7 +110,8 @@ INSTALL_RELAY_DEMO.command
 3. 詢問 Workspace ID 與非敏感的成員顯示名稱。
 4. 移除同名舊設定，再以帶有 Workspace ID 的 Production URL 註冊 `relay` MCP。
 5. 執行 `codex mcp get relay --json` 驗證設定。
-6. 直接啟動 Codex；第一次使用時依畫面選擇 **Sign in with ChatGPT**。
+6. 在啟動 Codex 前送出一次 MCP `initialize` handshake，必須收到 HTTP 200；不再讓 HTML 401 混進 Codex startup log。
+7. 直接啟動 Codex；第一次使用時依畫面選擇 **Sign in with ChatGPT**。
 
 腳本不再要求或設定 `RELAY_MCP_TOKEN`。Workspace ID 會寫入 MCP URL；它在此 Demo 中等同加入碼，因此不要用這個模式保存敏感或正式資料。
 

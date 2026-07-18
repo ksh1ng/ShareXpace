@@ -9,6 +9,7 @@ WORKSPACE_ID="${RELAY_WORKSPACE_ID:-relay-production}"
 LAUNCH_CODEX=1
 INSTALL_CODEX=1
 TEMP_INSTALLER=""
+TEMP_HANDSHAKE=""
 
 usage() {
   cat <<'EOF'
@@ -37,6 +38,9 @@ done
 cleanup() {
   if [ -n "$TEMP_INSTALLER" ] && [ -f "$TEMP_INSTALLER" ]; then
     rm -f "$TEMP_INSTALLER"
+  fi
+  if [ -n "$TEMP_HANDSHAKE" ] && [ -f "$TEMP_HANDSHAKE" ]; then
+    rm -f "$TEMP_HANDSHAKE"
   fi
 }
 trap cleanup EXIT INT TERM
@@ -100,6 +104,21 @@ codex mcp add "$RELAY_NAME" \
 
 step "Verifying the saved MCP configuration"
 codex mcp get "$RELAY_NAME" --json
+
+step "Testing the MCP handshake"
+TEMP_HANDSHAKE="$(mktemp "${TMPDIR:-/tmp}/relay-handshake.XXXXXX")"
+handshake_status="$(curl --silent --show-error \
+  --output "$TEMP_HANDSHAKE" \
+  --write-out '%{http_code}' \
+  --request POST "$connection_url" \
+  --header 'Accept: application/json, text/event-stream' \
+  --header 'Content-Type: application/json' \
+  --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"relay-demo-installer","version":"1.0"}}}')"
+
+if [ "$handshake_status" != "200" ] || ! grep -q '"protocolVersion"' "$TEMP_HANDSHAKE"; then
+  fail "Relay MCP handshake returned HTTP $handshake_status. Confirm the Production URL and Workspace ID, then run the installer again."
+fi
+printf 'Relay MCP handshake succeeded (HTTP 200).\n'
 
 cat <<EOF
 
