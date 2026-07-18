@@ -423,6 +423,17 @@ Create a five-day Tokyo itinerary for our team. Prioritize walkable neighborhood
 
 保護規則：即使 Agent 誤把 Scene 2 的 `generate_with_team_knowledge` 沿用到完全相同的 Scene 3 問題，fresh exact fingerprint 現在仍會優先走 `semantic_cache`。只有非 exact 的相關問題才會被該 operation 強制走 RAG。
 
+`relay_execute` 會把完整的既有答案直接顯示在 Codex CLI，並列出兩個選擇：接受快取答案時不需再呼叫任何工具；若看完後想用目前團隊知識更新，呼叫：
+
+```text
+relay.relay_rag_refresh_preflight({
+  "recordId": "relay_execute 回傳的 record ID",
+  "question": "原本的完整問題"
+})
+```
+
+再把新的 `preflightId` 交給 `relay_execute`。Codex 依 RAG handoff 產生新版後，呼叫 `relay_submit_result`，Relay 會保留舊紀錄並建立新版。
+
 ### Scene 4 — 貼回共同聊天
 
 任一 Agent 執行：

@@ -93,7 +93,7 @@ test("MCP routes cache locally and hands RAG/full work to the host agent", async
     read("../app/page.tsx"),
   ]);
 
-  for (const tool of ["relay_preflight", "relay_execute", "relay_submit_result", "relay_search_memory", "relay_refresh", "relay_post_update", "relay_get_workspace"]) {
+  for (const tool of ["relay_preflight", "relay_execute", "relay_submit_result", "relay_search_memory", "relay_rag_refresh_preflight", "relay_refresh", "relay_post_update", "relay_get_workspace"]) {
     assert.match(mcpRoute, new RegExp(tool));
   }
   assert.match(mcpRoute, /tools\/list/);
@@ -107,6 +107,13 @@ test("MCP routes cache locally and hands RAG/full work to the host agent", async
   assert.match(relayService, /agent_action_required/);
   assert.match(relayService, /modelCalledByRelay: false/);
   assert.match(relayService, /requiredNextTool: "relay_submit_result"/);
+  assert.match(relayService, /status: "cached_answer_returned"/);
+  assert.match(relayService, /answer: record\.detail/);
+  assert.match(relayService, /refreshWithTeamKnowledge/);
+  assert.match(mcpRoute, /## Cached answer/);
+  assert.match(mcpRoute, /Display it to the member/);
+  assert.match(mcpRoute, /Revise it with current team knowledge/);
+  assert.match(workspace, /operation === "rag_refresh"/);
   assert.match(workspace, /keep\n  \/\/ routing local and deterministic|routing local and deterministic/);
   assert.match(workspace, /RELAY_MCP_JOIN_MODE/);
   assert.match(workspace, /workspace_access_denied/);

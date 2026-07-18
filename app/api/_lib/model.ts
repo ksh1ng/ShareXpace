@@ -123,7 +123,7 @@ async function buildWorkspacePlan(input: {
     ],
   }];
   const tools = input.operation === "refresh" && input.sourceUrl ? [{ type: "web_search" }] : undefined;
-  const recordId = input.operation === "refresh"
+  const recordId = input.operation === "refresh" || input.operation === "rag_refresh"
     ? input.targetRecordId ?? null
     : route === "full_generation" ? null : best?.record.id ?? null;
   return {
