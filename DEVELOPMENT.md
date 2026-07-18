@@ -69,6 +69,7 @@ Every route uses `requireActor()` and `errorResponse()` from `workspace.ts`.
 - `app/layout.tsx` enforces Dashboard SIWC after the Sites dispatch layer is made public for remote MCP transport. Route handlers under `app/api/mcp` are not wrapped by the page layout; browser APIs retain their own `requireActor` checks.
 - `app/api/_lib/relay-service.ts` is the transport-neutral application layer shared by MCP and Web API routes.
 - `relay_preflight` must precede `relay_execute`; direct execute attempts fail because no matching `token_estimates` authorization record exists.
+- Route precedence is `refresh → no/low match → fresh exact Semantic Cache → forced RAG for non-exact related knowledge → threshold routing`. This prevents a carried-over Scene 2 operation from turning a Scene 3 duplicate into RAG.
 - `relay_execute` never invokes a generation model for RAG/Full Generation. It returns `agent_action_required`, a bounded context payload, and `requiredNextTool: relay_submit_result`.
 - `relay_submit_result` must be called by the same MCP identity with the unchanged question. It stores the host-agent answer in memory and shared chat and consumes the preflight.
 - `RELAY_MCP_JOIN_MODE=workspace_id` enables the low-friction Hackathon Demo join flow. The `workspace_id` query value must match `RELAY_WORKSPACE_ID`; the optional `member` value is only an audit label, not verified identity. For a real production deployment, switch to `bearer_token` and configure independent `RELAY_MCP_ACCESS_TOKENS` values.

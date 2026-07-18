@@ -729,6 +729,9 @@ export function classifyDefenseRoute(
   if (operation === "refresh") return "full_generation";
   const thresholds = routeThresholds();
   if (!match || match.score < thresholds.rag) return "full_generation";
+  // A fresh exact fingerprint is deterministic team memory, so it always wins
+  // over a client accidentally carrying forward the RAG demo operation.
+  if (match.matchType === "exact" && match.freshness.directReuseAllowed) return "semantic_cache";
   if (operation === "generate_with_team_knowledge") return "rag";
   if (match.score >= thresholds.semantic && match.freshness.directReuseAllowed) return "semantic_cache";
   return "rag";
