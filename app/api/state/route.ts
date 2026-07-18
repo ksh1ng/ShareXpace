@@ -36,6 +36,8 @@ export async function GET(request: Request) {
       embedding: state.embedding,
       appMode: state.appMode,
       workspaceId: state.workspaceId,
+      workspaceName: state.workspaceName,
+      workspace: state.workspace,
     });
   } catch (error) {
     return errorResponse(error, "Unable to load workspace.");

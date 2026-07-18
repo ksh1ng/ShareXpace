@@ -170,7 +170,7 @@ async function workspaceResource(uri: string) {
   const state = await getWorkspaceState();
   const chat = uri.endsWith("/activity") ? await getChatMessages() : [];
   if (uri.endsWith("/summary")) {
-    return { workspaceId: state.workspaceId, routes: state.defense.routes, tokensSaved: state.defense.estimatedTokensSaved, actualCachedTokens: state.defense.actualCachedTokens, members: state.mcp.members };
+    return { workspace: state.workspace, workspaceId: state.workspaceId, workspaceName: state.workspaceName, routes: state.defense.routes, tokensSaved: state.defense.estimatedTokensSaved, actualCachedTokens: state.defense.actualCachedTokens, members: state.mcp.members };
   }
   if (uri.endsWith("/memory")) {
     return { records: state.records.filter((record) => !record.superseded_by && !record.requires_refresh).slice(0, 25).map((record) => ({ id: record.id, title: record.title, summary: record.summary, knowledgeType: record.knowledge_type, sourceUrl: record.source_url, expiresAt: record.expires_at })) };

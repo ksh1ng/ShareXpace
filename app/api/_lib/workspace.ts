@@ -13,6 +13,7 @@ type RuntimeEnv = {
   RELAY_EMBEDDING_PROVIDER?: string;
   RELAY_APP_MODE?: string;
   RELAY_WORKSPACE_ID?: string;
+  RELAY_WORKSPACE_NAME?: string;
   RELAY_SEMANTIC_CACHE_THRESHOLD?: string;
   RELAY_RAG_THRESHOLD?: string;
   RELAY_DEFAULT_TTL_HOURS?: string;
@@ -111,6 +112,10 @@ function numberSetting(value: string | undefined, fallback: number) {
 
 export function workspaceId() {
   return runtimeEnv().RELAY_WORKSPACE_ID?.trim() || "relay-production";
+}
+
+export function workspaceName() {
+  return runtimeEnv().RELAY_WORKSPACE_NAME?.trim() || "Relay Production";
 }
 
 export function appMode() {
@@ -456,6 +461,7 @@ export async function getWorkspaceState() {
   await ensureWorkspace();
   const { DB, OPENAI_API_KEY } = runtimeEnv();
   const id = workspaceId();
+  const name = workspaceName();
   const [records, files, reuse, model, cacheState, routes, estimated, preflights, mcpMembers, mcpEvents] = await Promise.all([
     DB.prepare("SELECT * FROM memory_records WHERE workspace_id = ? ORDER BY created_at DESC LIMIT 80").bind(id).all<MemoryRow>(),
     DB.prepare("SELECT * FROM workspace_files WHERE workspace_id = ? ORDER BY created_at DESC LIMIT 30").bind(id).all<FileRow>(),
@@ -502,6 +508,8 @@ export async function getWorkspaceState() {
     },
     appMode: appMode(),
     workspaceId: id,
+    workspaceName: name,
+    workspace: { id, name },
   };
 }
 
