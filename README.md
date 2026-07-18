@@ -45,7 +45,7 @@ Resources are available at `relay://workspace/<workspace-id>/{summary,memory,act
 
 Every agent action is a two-step transaction:
 
-1. Preflight selects the defense route. When a provider credential is available, Relay may use embeddings and exact input counting; without one it falls back to exact/lexical retrieval and a clearly labelled local estimate. Semantic Cache reports zero main-model input.
+1. Preflight selects the defense route. Exact fingerprints are checked first. Semantic retrieval then uses cached D1 document vectors plus one query embedding; without an embedding credential (or during a provider outage) Relay falls back to lexical retrieval. Semantic Cache reports zero main-model input.
 2. The UI displays exact planned input tokens, the configured output ceiling, and the estimate expiry. Submission must include the short-lived estimate ID.
 3. The server validates actor, prompt fingerprint, route, operation, matched record, TTL, and single-use state, then atomically claims the handoff.
 4. Semantic Cache finishes immediately. RAG/Full Generation returns context to the host agent, which generates with its own model and calls `relay_submit_result` to persist the answer and optional host-reported usage.
@@ -90,13 +90,15 @@ pnpm typecheck
 pnpm test
 ```
 
-Apply every SQL file in `drizzle/` to the production D1 database before serving traffic. Set `RELAY_ALLOW_LOCAL_ANONYMOUS=true` only for local development. `OPENAI_API_KEY` is optional for MCP: when present it improves semantic retrieval and exact token counting, but the host agent still performs RAG/Full generation.
+Apply every SQL file in `drizzle/` to the production D1 database before serving traffic. Set `RELAY_ALLOW_LOCAL_ANONYMOUS=true` only for local development. `GEMINI_API_KEY` enables free-tier multilingual semantic retrieval. `OPENAI_API_KEY` remains optional for exact OpenAI input counting and can also be used as the embedding fallback; the host agent still performs RAG/Full generation.
 
 ## Environment variables
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `OPENAI_API_KEY` | optional | Improves embedding retrieval and exact input counting; MCP generation remains in the host agent |
+| `GEMINI_API_KEY` | recommended | Enables `gemini-embedding-001` semantic retrieval; it is never used for answer generation |
+| `RELAY_EMBEDDING_PROVIDER` | no | `auto` (default) prefers Gemini, then OpenAI, then lexical; also accepts `gemini`, `openai`, or `lexical` |
+| `OPENAI_API_KEY` | optional | Enables exact OpenAI input counting and provides an embedding fallback; MCP generation remains in the host agent |
 | `RELAY_APP_MODE` | yes | Set to `production` |
 | `RELAY_WORKSPACE_ID` | yes | Stable D1 partition and prompt-cache namespace |
 | `RELAY_SEMANTIC_CACHE_THRESHOLD` | no | High-similarity direct reuse threshold; default `0.78` |
@@ -109,6 +111,8 @@ Apply every SQL file in `drizzle/` to the production D1 database before serving 
 | `RELAY_MCP_ACCESS_TOKENS` | for MCP | Secret JSON map of bearer tokens to workspace member names |
 
 Bindings are declared in `.openai/hosting.json`: D1 as `DB` and R2 as `FILES`. Hosted access is private by default through Sites authentication.
+
+Embedding vectors for Workspace answers are generated once and cached in D1 by model and dimension. A query creates only one new embedding; exact duplicate questions bypass the embedding provider entirely. Provider failures degrade to lexical matching so MCP agents remain usable. Gemini uses the retrieval-specific query/document task types and 768 dimensions; OpenAI keeps the existing 256-dimensional `text-embedding-3-small` path.
 
 ## Verification
 

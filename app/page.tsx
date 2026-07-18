@@ -117,6 +117,13 @@ type McpStatus = {
   events: Array<{ actor: string; clientName: string; method: string; toolName: string | null; success: boolean; route: DefenseRoute | null; createdAt: string }>;
 };
 
+type EmbeddingStatus = {
+  ready: boolean;
+  provider: "gemini" | "openai" | "lexical";
+  model: string | null;
+  dimensions: number;
+};
+
 const agents = [
   { initials: "YA", name: "Your agent", role: "Workspace collaborator", color: "gold" },
 ];
@@ -151,6 +158,7 @@ export default function Home() {
   const [chatEstimate, setChatEstimate] = useState<{ question: string; estimate: TokenEstimate } | null>(null);
   const [pendingChatRun, setPendingChatRun] = useState<{ sourceMessageId: string; instruction: string; estimate: TokenEstimate } | null>(null);
   const [mcp, setMcp] = useState<McpStatus>({ enabled: false, members: [], events: [] });
+  const [embedding, setEmbedding] = useState<EmbeddingStatus>({ ready: false, provider: "lexical", model: null, dimensions: 0 });
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -159,13 +167,14 @@ export default function Home() {
         if (!response.ok) throw new Error("The shared workspace could not be loaded.");
         return response.json();
       })
-      .then((data: { records: MemoryItem[]; stats: { tokensSaved: number; duplicates: number }; promptCache: PromptCache; defense: DefenseStats; modelReady: boolean; mcp: McpStatus }) => {
+      .then((data: { records: MemoryItem[]; stats: { tokensSaved: number; duplicates: number }; promptCache: PromptCache; defense: DefenseStats; modelReady: boolean; mcp: McpStatus; embedding: EmbeddingStatus }) => {
         setMemory(data.records);
         setDuplicates(data.stats.duplicates);
         setPromptCache(data.promptCache);
         setDefense(data.defense);
         setModelReady(data.modelReady);
         setMcp(data.mcp);
+        setEmbedding(data.embedding);
       })
       .catch((reason: Error) => setError(reason.message))
       .finally(() => setLoadingWorkspace(false));
@@ -485,6 +494,7 @@ export default function Home() {
               <code>/api/mcp</code>
               <div><span>Connected identities</span><strong>{mcp.members.length}</strong></div>
               <div><span>Audited tool calls</span><strong>{mcp.members.reduce((total, member) => total + member.calls, 0)}</strong></div>
+              <div><span>Semantic retrieval</span><strong>{embedding.ready ? `${embedding.provider} · ${embedding.dimensions}d` : "lexical fallback"}</strong></div>
               <small>Every Relay-funded generation requires a short-lived, identity-bound preflight.</small>
             </div>
           </section>
