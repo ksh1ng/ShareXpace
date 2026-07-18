@@ -725,7 +725,6 @@ export function classifyDefenseRoute(
   // A fresh exact fingerprint is deterministic team memory, so it always wins
   // over a client accidentally carrying forward the RAG demo operation.
   if (match.matchType === "exact" && match.freshness.directReuseAllowed) return "semantic_cache";
-  if (operation === "generate_with_team_knowledge") return "rag";
   // A high raw embedding score is independently sufficient. Do not let small
   // wording/number differences in the lexical component dilute a strong
   // paraphrase below the blended Hybrid threshold.
@@ -737,6 +736,10 @@ export function classifyDefenseRoute(
       match.score >= thresholds.semantic
     )
   ) return "semantic_cache";
+  // The generic team-knowledge operation can force RAG only for a medium
+  // match. High-confidence reuse wins unless the member explicitly uses the
+  // post-hit rag_refresh flow after reviewing the cached answer.
+  if (operation === "generate_with_team_knowledge") return "rag";
   if (match.score < thresholds.rag) return "full_generation";
   return "rag";
 }

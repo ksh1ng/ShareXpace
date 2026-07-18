@@ -79,6 +79,11 @@ test("three-layer routing and knowledge freshness remain enforced", async () => 
     "independent high-similarity signals must be evaluated before the blended low-score fallback",
   );
   assert.ok(
+    workspace.indexOf("match.semanticScore >= thresholds.semanticEmbedding") <
+      workspace.indexOf('operation === "generate_with_team_knowledge"', workspace.indexOf("export function classifyDefenseRoute")),
+    "high-confidence reuse must take precedence over the generic forced-RAG operation",
+  );
+  assert.ok(
     workspace.indexOf('match.matchType === "exact" && match.freshness.directReuseAllowed') <
       workspace.indexOf('operation === "generate_with_team_knowledge"', workspace.indexOf("export function classifyDefenseRoute")),
     "fresh exact matching must take precedence over forced RAG",

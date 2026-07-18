@@ -404,7 +404,7 @@ Create a five-day Tokyo itinerary for our team. Prioritize walkable neighborhood
 Create a 5-day Tokyo itinerary for us. Prioritize walkable neighborhoods, 1 day trip, and a affordable budget.
 ```
 
-Relay 接受 Hybrid score 達設定門檻、raw embedding similarity 達 80%，或 normalized lexical similarity 達較保守的 88% 的 fresh match。數字寫法與 `moderate`／`affordable` 也會先做 lexical normalization；上述兩句的 normalized lexical score 約為 91%，因此即使 embedding provider 暫時失敗或分數偏保守也會走 Semantic Cache。
+Relay 接受 Hybrid score 達設定門檻、raw embedding similarity 達 80%，或 normalized lexical similarity 達較保守的 88% 的 fresh match。數字寫法與 `moderate`／`affordable` 也會先做 lexical normalization；上述兩句的 normalized lexical score 約為 91%，因此即使 embedding provider 暫時失敗、分數偏保守，或 Agent 誤帶一般的 `generate_with_team_knowledge`，仍會優先走 Semantic Cache。看完後的刻意更新必須使用 `relay_rag_refresh_preflight`。
 
 Alice 或 Bob 再次輸入與 Alice 完全相同的問題：
 
