@@ -169,6 +169,9 @@ test("demo guide includes beginner Codex MCP setup and verification", async () =
   assert.match(installer, /workspace_id=\$\{workspace_id\}/);
   assert.doesNotMatch(installer, /launchctl setenv|bearer-token/);
   assert.match(installer, /launchctl unsetenv RELAY_MCP_TOKEN/);
+  assert.match(installer, /"method":"initialize"/);
+  assert.match(installer, /handshake returned HTTP/);
+  assert.match(installer, /handshake succeeded \(HTTP 200\)/);
   assert.match(installer, /exec codex/);
   assert.match(launcher, /install-relay-demo\.sh/);
   assert.equal(spawnSync("bash", ["-n", new URL("../scripts/install-relay-demo.sh", import.meta.url).pathname]).status, 0);
