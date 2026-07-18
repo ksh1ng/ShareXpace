@@ -46,6 +46,7 @@ Resources are available at `relay://workspace/<workspace-id>/{summary,memory,act
 Every agent action is a two-step transaction:
 
 1. Preflight selects the defense route. Exact fingerprints are checked first. Semantic retrieval then uses cached D1 document vectors plus one query embedding; without an embedding credential (or during a provider outage) Relay falls back to lexical retrieval. Semantic Cache reports zero main-model input.
+   A fresh exact fingerprint always wins over `generate_with_team_knowledge`; that operation can force RAG only for non-exact related questions.
 2. The UI displays exact planned input tokens, the configured output ceiling, and the estimate expiry. Submission must include the short-lived estimate ID.
 3. The server validates actor, prompt fingerprint, route, operation, matched record, TTL, and single-use state, then atomically claims the handoff.
 4. Semantic Cache finishes immediately. RAG/Full Generation returns context to the host agent, which generates with its own model and calls `relay_submit_result` to persist the answer and optional host-reported usage.

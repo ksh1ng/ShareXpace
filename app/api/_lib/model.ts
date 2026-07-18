@@ -201,10 +201,13 @@ export async function estimateWorkspaceTokens(input: {
   if (estimatedInputTokens > tokenLimits().maxInputTokens) {
     throw new ApiError(`This prompt would use ${estimatedInputTokens.toLocaleString()} input tokens, above the workspace limit.`, 413, "input_token_limit_exceeded");
   }
+  // Semantic reuse is the effective operation even when a client mistakenly
+  // requests generate_with_team_knowledge for an exact duplicate.
+  const effectiveOperation = plan.route === "semantic_cache" ? "auto" : operation;
   const estimate = await createTokenEstimate({
     actor: input.actor,
     question: input.question,
-    operation,
+    operation: effectiveOperation,
     route: plan.route,
     model: MODEL,
     recordId: plan.recordId,

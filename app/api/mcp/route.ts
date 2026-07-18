@@ -40,7 +40,7 @@ const tools = [
       type: "object",
       properties: {
         question: { type: "string", description: "The exact workspace question or task." },
-        operation: { type: "string", enum: ["auto", "generate_with_team_knowledge"], default: "auto" },
+        operation: { type: "string", enum: ["auto", "generate_with_team_knowledge"], default: "auto", description: "Use auto for normal routing and all duplicate checks. generate_with_team_knowledge forces RAG only for a non-exact related question; a fresh exact duplicate still uses Semantic Cache." },
       },
       required: ["question"],
       additionalProperties: false,
@@ -57,7 +57,7 @@ const tools = [
         preflightId: { type: "string" },
         question: { type: "string", description: "Must exactly match the preflight question." },
         agent: { type: "string", description: "Agent name shown in shared activity." },
-        operation: { type: "string", enum: ["auto", "generate_with_team_knowledge"], default: "auto" },
+        operation: { type: "string", enum: ["auto", "generate_with_team_knowledge"], default: "auto", description: "Normally match the preflight operation. A fresh exact-match preflight is normalized to auto and reused from Semantic Cache." },
         knowledgeType: knowledgeTypeSchema,
       },
       required: ["preflightId", "question"],

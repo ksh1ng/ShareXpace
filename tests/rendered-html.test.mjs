@@ -66,7 +66,14 @@ test("three-layer routing and knowledge freshness remain enforced", async () => 
   }
   assert.match(workspace, /semantic_cache/);
   assert.match(workspace, /full_generation/);
+  assert.match(workspace, /match\.matchType === "exact" && match\.freshness\.directReuseAllowed/);
+  assert.ok(
+    workspace.indexOf('match.matchType === "exact" && match.freshness.directReuseAllowed') <
+      workspace.indexOf('operation === "generate_with_team_knowledge"', workspace.indexOf("export function classifyDefenseRoute")),
+    "fresh exact matching must take precedence over forced RAG",
+  );
   assert.match(workspace, /directReuseAllowed/);
+  assert.match(model, /effectiveOperation = plan\.route === "semantic_cache" \? "auto" : operation/);
   assert.match(model, /Retrieved historical summaries and sources/);
   assert.ok(model.indexOf("Stable workspace policy and knowledge") < model.indexOf("Current member request"));
   assert.match(model, /prompt_cache_breakpoint/);

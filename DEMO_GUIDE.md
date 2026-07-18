@@ -409,8 +409,19 @@ Create a five-day Tokyo itinerary for our team. Prioritize walkable neighborhood
 2. Exact fingerprint 應命中 Alice 的答案。
 3. Route 顯示 `semantic_cache`。
 4. Preflight 的 main-model input 與 output ceiling 應為 `0`。
-5. 執行 `relay_execute`，直接取得既有答案。
+5. 執行 `relay_execute`，`operation` 同樣使用 `auto`，直接取得既有答案。
 6. Dashboard 的 Semantic 次數、Duplicates 與 Estimated tokens saved 增加。
+
+建議的 Scene 3 payload：
+
+```json
+{
+  "question": "Create a five-day Tokyo itinerary for our team. Prioritize walkable neighborhoods, one day trip, and a moderate budget.",
+  "operation": "auto"
+}
+```
+
+保護規則：即使 Agent 誤把 Scene 2 的 `generate_with_team_knowledge` 沿用到完全相同的 Scene 3 問題，fresh exact fingerprint 現在仍會優先走 `semantic_cache`。只有非 exact 的相關問題才會被該 operation 強制走 RAG。
 
 ### Scene 4 — 貼回共同聊天
 
