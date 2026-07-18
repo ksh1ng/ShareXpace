@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
@@ -145,10 +146,15 @@ test("dashboard and MCP expose the configured workspace identity", async () => {
 });
 
 test("demo guide includes beginner Codex MCP setup and verification", async () => {
-  const guide = await read("../DEMO_GUIDE.md");
+  const [guide, installer, launcher] = await Promise.all([
+    read("../DEMO_GUIDE.md"),
+    read("../scripts/install-relay-demo.sh"),
+    read("../INSTALL_RELAY_DEMO.command"),
+  ]);
   assert.match(guide, /curl -fsSL https:\/\/chatgpt\.com\/codex\/install\.sh \| sh/);
   assert.match(guide, /codex --version/);
   assert.match(guide, /Sign in with ChatGPT/);
+  assert.match(guide, /INSTALL_RELAY_DEMO\.command/);
   assert.match(guide, /codex mcp add relay/);
   assert.match(guide, /--bearer-token-env-var RELAY_MCP_TOKEN/);
   assert.match(guide, /launchctl setenv RELAY_MCP_TOKEN/);
@@ -156,6 +162,14 @@ test("demo guide includes beginner Codex MCP setup and verification", async () =
   assert.match(guide, /Workspace ID: relay-production/);
   assert.match(guide, /一般成員不需要設定 `OPENAI_API_KEY`/);
   assert.match(guide, /codex mcp remove relay/);
+  assert.match(installer, /https:\/\/chatgpt\.com\/codex\/install\.sh/);
+  assert.match(installer, /launchctl setenv RELAY_MCP_TOKEN/);
+  assert.match(installer, /codex mcp add "\$RELAY_NAME"/);
+  assert.match(installer, /--bearer-token-env-var RELAY_MCP_TOKEN/);
+  assert.match(installer, /exec codex/);
+  assert.match(launcher, /install-relay-demo\.sh/);
+  assert.equal(spawnSync("bash", ["-n", new URL("../scripts/install-relay-demo.sh", import.meta.url).pathname]).status, 0);
+  assert.equal(spawnSync("bash", ["-n", new URL("../INSTALL_RELAY_DEMO.command", import.meta.url).pathname]).status, 0);
 });
 
 test("production removes runtime demo bootstrap and requires identity", async () => {
