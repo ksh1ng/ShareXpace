@@ -35,6 +35,7 @@
 ```env
 RELAY_APP_MODE=production
 RELAY_WORKSPACE_ID=relay-build-week-demo
+RELAY_WORKSPACE_NAME=RoamTogether Development
 RELAY_ALLOW_LOCAL_ANONYMOUS=true
 RELAY_MCP_ACCESS_TOKENS={"alice-demo-token":"Alice","bob-demo-token":"Bob","carol-demo-token":"Carol"}
 ```
@@ -53,13 +54,284 @@ pnpm dev
 
 Web Dashboard 使用開發伺服器顯示的 URL。MCP endpoint 是相同 host 下的 `/api/mcp`。
 
-## 3. 建議 Demo 角色
+## 3. 使用者如何透過 Codex 連接 Relay MCP（小白版）
+
+這一節是給「只想連上 Demo、不需要理解 MCP 程式碼」的成員。Production 使用的是遠端 Streamable HTTP MCP Server，使用者不需要下載 Relay 原始碼，也不需要在自己的電腦啟動 Relay Server。
+
+### 3.1 先向 Workspace 管理員取得五項資料
+
+每位成員應收到：
+
+| 項目 | Production Demo 值 | 用途 |
+| --- | --- | --- |
+| Dashboard | `https://relay-production-2026.opompm841218.chatgpt.site` | 查看 Workspace、聊天、路由及 Token 統計 |
+| MCP URL | `https://relay-production-2026.opompm841218.chatgpt.site/api/mcp` | Codex 實際連接的 MCP endpoint |
+| Workspace | `RoamTogether Development` | 人類可讀的 Workspace 名稱 |
+| Workspace ID | `relay-production` | 確認 Codex 與 Dashboard 使用同一個 Workspace |
+| Member token | 每人不同，由管理員私下提供 | Relay 用來辨識 Alice、Bob 等成員 |
+
+Member token 不是 OpenAI API key，也不是 ChatGPT 密碼。不要把它貼進 Codex 對話、GitHub、README、截圖或 Demo 影片。
+
+目前 Demo 只有一個固定 Workspace。MCP Server 會自動把所有通過驗證的 tool call 放進 `relay-production`；使用者連線後應呼叫 `relay_get_workspace`，確認回傳的 ID 與 Dashboard 相同。現階段不是由使用者在每個 tool 參數中切換 Workspace。
+
+### 3.2 開啟 Dashboard 並抄下 Workspace ID
+
+1. 用瀏覽器開啟 [Relay Production Dashboard](https://relay-production-2026.opompm841218.chatgpt.site)。
+2. 若出現 Sign in with ChatGPT，使用獲准存取此私人 Site 的 ChatGPT 帳號登入。
+3. 在左側 Workspace 卡片或頂部導覽列確認：
+
+   ```text
+   RoamTogether Development
+   relay-production
+   ```
+
+4. 點擊 Workspace ID 即可複製。
+
+Dashboard 登入和 MCP token 是兩層不同驗證：能打開 Dashboard，不代表 Codex 已連上 MCP；Codex 仍需要自己的 Member token。
+
+### 3.3 方法 A：Codex CLI 連線（最容易測試，建議先用）
+
+#### Step A1 — 確認 Codex CLI 可用
+
+打開 macOS 的 Terminal，輸入：
+
+```bash
+codex --version
+```
+
+若能看到版本號即可繼續。如果出現 `command not found`，先安裝或更新 Codex CLI，再回到這一步。
+
+#### Step A2 — 把 Member token 放進目前 Terminal
+
+為避免 token 顯示在畫面上，輸入：
+
+```bash
+read -s RELAY_MCP_TOKEN
+export RELAY_MCP_TOKEN
+```
+
+游標會停住且不顯示輸入內容。貼上管理員提供的 Member token，按 Enter。
+
+確認變數存在，但不要印出真正 token：
+
+```bash
+if [ -n "$RELAY_MCP_TOKEN" ]; then echo "Relay token is configured"; else echo "Relay token is missing"; fi
+```
+
+預期：
+
+```text
+Relay token is configured
+```
+
+關閉這個 Terminal 後，這個臨時環境變數通常就不再存在。
+
+#### Step A3 — 將 Relay MCP Server 加入 Codex
+
+在同一個 Terminal 執行：
+
+```bash
+codex mcp add relay \
+  --url https://relay-production-2026.opompm841218.chatgpt.site/api/mcp \
+  --bearer-token-env-var RELAY_MCP_TOKEN
+```
+
+這個命令只記錄環境變數名稱 `RELAY_MCP_TOKEN`，不會把 token 本身寫進 MCP URL。Codex 官方文件說明 `codex mcp add` 會管理 `~/.codex/config.toml` 內的 MCP server，`--url` 註冊 Streamable HTTP server，而 `--bearer-token-env-var` 指定 Bearer token 的環境變數。[Codex MCP commands](https://learn.chatgpt.com/docs/developer-commands#codex-mcp)
+
+若之前已加入同名 `relay`，先檢查：
+
+```bash
+codex mcp get relay --json
+```
+
+如果 URL 錯誤，可重建：
+
+```bash
+codex mcp remove relay
+codex mcp add relay \
+  --url https://relay-production-2026.opompm841218.chatgpt.site/api/mcp \
+  --bearer-token-env-var RELAY_MCP_TOKEN
+```
+
+#### Step A4 — 確認 Codex 已儲存設定
+
+```bash
+codex mcp get relay --json
+```
+
+確認輸出包含：
+
+```text
+https://relay-production-2026.opompm841218.chatgpt.site/api/mcp
+RELAY_MCP_TOKEN
+```
+
+也可列出全部 MCP servers：
+
+```bash
+codex mcp list
+```
+
+不要期待在設定輸出中看到真正 token；看到環境變數名稱才是正確且較安全的結果。
+
+#### Step A5 — 從同一個 Terminal 啟動 Codex
+
+```bash
+codex
+```
+
+一定要從剛才設定 `RELAY_MCP_TOKEN` 的同一個 Terminal 啟動，否則新 Codex process 可能讀不到 token。
+
+### 3.4 方法 B：macOS Codex App 連線
+
+Codex App 和 CLI 共用 `~/.codex/config.toml` 內的 MCP server 定義，但圖形 App 必須在啟動時讀得到 `RELAY_MCP_TOKEN`。
+
+#### Step B1 — 設定 macOS App 可讀的環境變數
+
+在 Terminal 執行。第一行會安靜地讀取 token，不把 token 本身留在 shell history：
+
+```bash
+read -s RELAY_MCP_TOKEN
+export RELAY_MCP_TOKEN
+launchctl setenv RELAY_MCP_TOKEN "$RELAY_MCP_TOKEN"
+```
+
+執行第一行後貼上管理員提供的 Member token，再按 Enter。這個做法適合短期 Hackathon Demo；不要把真的 token 寫進教學文件或錄影畫面。
+
+#### Step B2 — 加入 MCP 設定
+
+如果尚未執行方法 A 的 `codex mcp add`，執行：
+
+```bash
+codex mcp add relay \
+  --url https://relay-production-2026.opompm841218.chatgpt.site/api/mcp \
+  --bearer-token-env-var RELAY_MCP_TOKEN
+```
+
+等價的 `~/.codex/config.toml` 設定是：
+
+```toml
+[mcp_servers.relay]
+url = "https://relay-production-2026.opompm841218.chatgpt.site/api/mcp"
+bearer_token_env_var = "RELAY_MCP_TOKEN"
+```
+
+Codex 對 Streamable HTTP MCP Server 支援 `url` 與 `bearer_token_env_var`，後者會把環境變數值放進 Authorization header。[Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp#streamable-http-servers)
+
+#### Step B3 — 完整重開 Codex App
+
+1. 使用 `Command + Q` 完全退出 Codex App。
+2. 重新開啟 Codex App。
+3. 建立一個新的 Local Codex chat。
+
+只關閉視窗不一定會重新載入環境變數，所以要完整退出 App。
+
+### 3.5 在 Codex 中驗證連線
+
+在新的 Codex chat 貼上：
+
+```text
+請先不要做任何生成任務。
+請使用 Relay MCP 的 relay_get_workspace，
+回報 Workspace name、Workspace ID、embedding provider，
+以及目前 Semantic Cache、RAG、Full Generation 次數。
+```
+
+成功時應看到 Codex 呼叫：
+
+```text
+relay_get_workspace
+```
+
+回傳至少應包含：
+
+```text
+Workspace name: RoamTogether Development
+Workspace ID: relay-production
+Embedding provider: gemini
+```
+
+接著測試 Shared Chat：
+
+```text
+請使用 Relay MCP 的 relay_post_update，
+在目前 Workspace 發布 discussion：
+「Alice 已成功從 Codex 連上 Relay，準備開始前端工作。」
+不要改寫內容，也不要呼叫生成模型。
+```
+
+回到 Dashboard 的 Shared Chat，應該能看到成員名稱與訊息。Dashboard 的 Connected Agents／MCP activity 也應新增一次 tool call。
+
+### 3.6 同一台 Mac 模擬 Alice 與 Bob
+
+同一個 Codex App process 只能讀到一份 `RELAY_MCP_TOKEN`。最穩定的雙人 Demo 是使用兩台電腦；若只有一台 Mac，可使用：
+
+- Alice：Codex App，透過 `launchctl` 使用 Alice token。
+- Bob：另一個 Terminal 啟動 Codex CLI，在該 Terminal 中 export Bob token。
+
+Bob 的 Terminal：
+
+```bash
+read -s RELAY_MCP_TOKEN
+export RELAY_MCP_TOKEN
+codex
+```
+
+貼上 Bob token 後啟動。CLI process 會使用 Terminal 裡的 Bob token，不需要改掉 Alice App 目前使用的 token。
+
+驗證方式：Alice 與 Bob 各呼叫一次 `relay_get_workspace` 或 `relay_post_update`，Dashboard 應顯示兩個不同 actor。
+
+### 3.7 Demo 結束後清除設定
+
+若不再使用 Relay：
+
+```bash
+codex mcp remove relay
+launchctl unsetenv RELAY_MCP_TOKEN
+unset RELAY_MCP_TOKEN
+```
+
+管理員也應從 Production 的 `RELAY_MCP_ACCESS_TOKENS` 移除或更換已公開、誤傳或不再使用的 token。
+
+### 3.8 連線常見問題
+
+#### Codex 看不到 Relay tools
+
+依序確認：
+
+1. `codex mcp get relay --json` 是否存在。
+2. URL 是否以 `/api/mcp` 結尾。
+3. `bearer_token_env_var` 是否為 `RELAY_MCP_TOKEN`。
+4. 設定 token 後是否完整重開 Codex App或從同一 Terminal 啟動 CLI。
+5. 是否開了一個新的 Codex chat。
+
+#### `mcp_authentication_required`
+
+代表 Relay 沒收到有效 Member token：
+
+- token 可能貼錯或多了空白。
+- 管理員可能尚未把 token 加入 `RELAY_MCP_ACCESS_TOKENS`。
+- Codex App 啟動時可能讀不到環境變數。
+- Alice 與 Bob 不應共用同一個 token，否則 Dashboard 無法區分身份。
+
+#### MCP URL 貼進瀏覽器只看到錯誤或空白
+
+這是正常的。`/api/mcp` 是給 MCP Client 傳送 JSON-RPC 的 endpoint，不是一般網頁。人類應開 Dashboard 根網址，Codex 才連 `/api/mcp`。
+
+#### Dashboard 可登入，但 MCP 仍驗證失敗
+
+Dashboard 使用 ChatGPT Site 登入；MCP 使用 Relay Member token。這兩種驗證互相獨立，必須分別成功。
+
+#### 是否需要 `OPENAI_API_KEY`
+
+一般成員不需要設定 `OPENAI_API_KEY`。Codex 使用自己的 Host Model；Relay Production 使用 Server 端設定的 Gemini embedding provider 做語意檢索。任何 provider key 都只應放在 Relay Server 的安全環境變數，不應交給 Workspace 成員。
+
+## 4. 建議 Demo 角色
 
 | 成員 | Client | Demo 工作 |
 | --- | --- | --- |
-| Alice | Codex | 建立第一筆全新研究結果 |
-| Bob | ChatGPT／另一個 MCP Client | 用團隊知識延伸答案 |
-| Carol | IDE Agent／第三個 MCP Client | 重問相同問題並命中 Semantic Cache |
+| Alice | Codex App | Frontend Developer，建立第一筆全新結果 |
+| Bob | Codex CLI | Backend Developer，用團隊知識延伸答案 |
 
 MCP Client 應設定：
 
@@ -70,7 +342,7 @@ Authorization: Bearer <member-token>
 
 每位成員使用不同 token，Dashboard 才能分辨成員與 Client 活動。
 
-## 4. 三分鐘 Demo 腳本
+## 5. 三分鐘 Demo 腳本
 
 ### Scene 1 — Full Generation
 
@@ -115,7 +387,7 @@ Create a five-day Tokyo itinerary for our team, but adapt the existing plan for 
 
 ### Scene 3 — Semantic Cache
 
-Carol 再次輸入與 Alice 完全相同的問題：
+Alice 或 Bob 再次輸入與 Alice 完全相同的問題：
 
 ```text
 Create a five-day Tokyo itinerary for our team. Prioritize walkable neighborhoods, one day trip, and a moderate budget.
@@ -157,7 +429,7 @@ Tokyo itinerary completed. The rainy-day version and vegetarian options are now 
 - MCP connected identities 與 audited tool calls。
 - Shared Memory 中 Alice、Bob 建立的答案。
 
-## 5. MCP JSON-RPC 範例
+## 6. MCP JSON-RPC 範例
 
 下列範例適合本機 smoke test。請替換 host 與 token。
 
@@ -208,7 +480,7 @@ curl https://<relay-host>/api/mcp \
   -d '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"relay_submit_result","arguments":{"preflightId":"<preflight-id>","question":"Create a five-day Tokyo itinerary for our team. Prioritize walkable neighborhoods, one day trip, and a moderate budget.","answer":"<agent-final-answer>","agent":"Alice Codex","model":"codex-host-model","knowledgeType":"semi_dynamic"}}}'
 ```
 
-## 6. Refresh Demo
+## 7. Refresh Demo
 
 Refresh 需要一筆包含 `source_url` 的 knowledge record。Production 不會自動建立假 seed，因此若沒有這類紀錄，可在主 Demo 中略過 Refresh。
 
@@ -221,12 +493,12 @@ Refresh 需要一筆包含 `source_url` 的 knowledge record。Production 不會
 5. Agent 呼叫 `relay_submit_result`。
 6. 舊紀錄保留並設定 `superseded_by`；新紀錄版本加一。
 
-## 7. Demo 成功檢查表
+## 8. Demo 成功檢查表
 
-- [ ] 三位 MCP 身份使用不同 bearer tokens。
+- [ ] Alice 與 Bob 使用不同 bearer tokens。
 - [ ] Alice 的第一題顯示 Full Generation。
 - [ ] Bob 的延伸題顯示 RAG。
-- [ ] Carol 的相同題顯示 Semantic Cache。
+- [ ] Alice 或 Bob 的相同題顯示 Semantic Cache。
 - [ ] Semantic Cache 的 main-model usage 為零。
 - [ ] RAG／Full 回傳 `agent_action_required`，且 Relay generation usage 為零。
 - [ ] Host Agent 完成後呼叫 `relay_submit_result`。
@@ -235,7 +507,7 @@ Refresh 需要一筆包含 `source_url` 的 knowledge record。Production 不會
 - [ ] Dashboard 分開顯示 actual cached tokens 與 estimated saved tokens。
 - [ ] Shared Memory 可看到新答案。
 
-## 8. 常見問題
+## 9. 常見問題
 
 ### `database_not_ready`
 
@@ -247,7 +519,7 @@ Bearer token 不在 `RELAY_MCP_ACCESS_TOKENS` 中，或 Authorization header 格
 
 ### 沒有 `OPENAI_API_KEY`
 
-MCP 仍可使用 exact／lexical retrieval 並把 RAG／Full 工作交給 Host Agent。設定 `OPENAI_API_KEY` 只會提升 embedding retrieval 與 input-token count，不會讓 Relay 代替 Agent 生成。
+一般 Workspace 成員不需要 `OPENAI_API_KEY`。MCP 仍會把 RAG／Full 工作交給 Codex Host Agent；Production 的 embedding provider key 由 Relay Server 管理，不會提供給成員。
 
 ### `estimate_expired` 或 `estimate_prompt_changed`
 
@@ -261,7 +533,7 @@ MCP 仍可使用 exact／lexical retrieval 並把 RAG／Full 工作交給 Host A
 
 確認問題完全相同，且原紀錄沒有過期、`requires_refresh`、`superseded_by`，也不是 `transactional`。
 
-## 9. 主要文件
+## 10. 主要文件
 
 - `README.md`：產品、環境變數與部署概覽。
 - `DEVELOPMENT.md`：架構和檔案／function 交接。

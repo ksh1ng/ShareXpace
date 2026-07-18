@@ -144,6 +144,17 @@ test("dashboard and MCP expose the configured workspace identity", async () => {
   assert.match(envExample, /RELAY_WORKSPACE_NAME=RoamTogether Development/);
 });
 
+test("demo guide includes beginner Codex MCP setup and verification", async () => {
+  const guide = await read("../DEMO_GUIDE.md");
+  assert.match(guide, /codex mcp add relay/);
+  assert.match(guide, /--bearer-token-env-var RELAY_MCP_TOKEN/);
+  assert.match(guide, /launchctl setenv RELAY_MCP_TOKEN/);
+  assert.match(guide, /relay_get_workspace/);
+  assert.match(guide, /Workspace ID: relay-production/);
+  assert.match(guide, /一般成員不需要設定 `OPENAI_API_KEY`/);
+  assert.match(guide, /codex mcp remove relay/);
+});
+
 test("production removes runtime demo bootstrap and requires identity", async () => {
   const [workspace, envExample, hosting, readme] = await Promise.all([
     read("../app/api/_lib/workspace.ts"),
