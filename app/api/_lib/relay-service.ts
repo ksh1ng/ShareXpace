@@ -61,13 +61,17 @@ export function presentMatch(match: Awaited<ReturnType<typeof estimateWorkspaceT
   };
 }
 
-async function refreshTarget(recordId: string) {
+async function knowledgeTarget(recordId: string, sourceRequired = false) {
   const record = await runtimeEnv().DB.prepare("SELECT * FROM memory_records WHERE id = ? AND workspace_id = ?")
     .bind(recordId, workspaceId())
     .first<MemoryRow>();
   if (!record) throw new ApiError("Knowledge record not found.", 404, "record_not_found");
-  if (!record.source_url) throw new ApiError("This record has no source URL to refresh.", 409, "source_required");
+  if (sourceRequired && !record.source_url) throw new ApiError("This record has no source URL to refresh.", 409, "source_required");
   return record;
+}
+
+async function refreshTarget(recordId: string) {
+  return knowledgeTarget(recordId, true);
 }
 
 export async function relayPreflight(input: {
@@ -79,13 +83,13 @@ export async function relayPreflight(input: {
   recordId?: string | null;
 }) {
   await ensureWorkspace();
-  const operation = input.operation === "generate_with_team_knowledge" || input.operation === "refresh" ? input.operation : "auto";
+  const operation = input.operation === "generate_with_team_knowledge" || input.operation === "rag_refresh" || input.operation === "refresh" ? input.operation : "auto";
   let question = validateQuestion(input.question);
   let target: MemoryRow | null = null;
-  if (operation === "refresh") {
+  if (operation === "refresh" || operation === "rag_refresh") {
     if (!input.recordId) throw new ApiError("Record is required for refresh estimation.", 400, "record_required");
-    target = await refreshTarget(input.recordId);
-    question = target.title;
+    target = await knowledgeTarget(input.recordId, operation === "refresh");
+    if (operation === "refresh") question = target.title;
   }
   const result = await estimateWorkspaceTokens({
     question,
@@ -147,11 +151,22 @@ export async function relayReuse(input: {
   });
   const state = await getWorkspaceState();
   return {
+    status: "cached_answer_returned" as const,
+    answer: record.detail,
+    sources: record.source_url ? [{ url: record.source_url, recordId: record.id, version: record.version }] : [],
     record: presentMemoryRecord(record),
     savedTokens: record.token_count,
     stats: state.stats,
     defense: state.defense,
     route: "semantic_cache" as const,
+    nextActions: {
+      acceptCachedAnswer: { required: false, description: "No further Relay call is required." },
+      refreshWithTeamKnowledge: {
+        tool: "relay_rag_refresh_preflight",
+        arguments: { recordId: record.id, question },
+        description: "Explicitly request a RAG revision after reviewing this cached answer.",
+      },
+    },
     usage: {
       source: "semantic_cache" as const,
       modelCalled: false,
@@ -184,7 +199,7 @@ export async function relayExecute(input: {
     .bind(input.estimateId, workspaceId())
     .first<TokenEstimateRow>();
   if (!estimate) throw new ApiError("Token estimate not found. Run relay_preflight first.", 409, "estimate_not_found");
-  const operation = input.operation === "generate_with_team_knowledge" || input.operation === "refresh" ? input.operation : estimate.operation;
+  const operation = input.operation === "generate_with_team_knowledge" || input.operation === "rag_refresh" || input.operation === "refresh" ? input.operation : estimate.operation;
   if (operation === "refresh") {
     const old = await refreshTarget(input.recordId ?? estimate.record_id ?? "");
     const result = await generateWorkspaceAnswer({
@@ -264,7 +279,7 @@ export async function relayCreateAgentHandoff(input: {
     .bind(input.estimateId, workspaceId())
     .first<TokenEstimateRow>();
   if (!estimate) throw new ApiError("Preflight not found. Run relay_preflight first.", 409, "estimate_not_found");
-  const operation = input.operation === "generate_with_team_knowledge" || input.operation === "refresh" ? input.operation : estimate.operation;
+  const operation = input.operation === "generate_with_team_knowledge" || input.operation === "rag_refresh" || input.operation === "refresh" ? input.operation : estimate.operation;
   const refreshRecord = operation === "refresh" ? await refreshTarget(input.recordId ?? estimate.record_id ?? "") : null;
   if (refreshRecord) question = refreshRecord.title;
   if (estimate.route === "semantic_cache") {
@@ -349,7 +364,9 @@ export async function relaySubmitAgentResult(input: {
   if (estimate.question_fingerprint !== await questionFingerprint(question)) throw new ApiError("The submitted question does not match the handoff.", 409, "estimate_prompt_changed");
   if (estimate.route === "semantic_cache") throw new ApiError("Semantic Cache results must use the cached answer.", 409, "semantic_cache_available");
 
-  const old = estimate.operation === "refresh" && estimate.record_id ? await refreshTarget(estimate.record_id) : null;
+  const old = (estimate.operation === "refresh" || estimate.operation === "rag_refresh") && estimate.record_id
+    ? await knowledgeTarget(estimate.record_id, estimate.operation === "refresh")
+    : null;
   const createdAt = new Date();
   const id = crypto.randomUUID();
   const knowledgeType = old?.knowledge_type ?? input.knowledgeType ?? "dynamic";
