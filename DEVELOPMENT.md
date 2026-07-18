@@ -65,12 +65,12 @@ Every route uses `requireActor()` and `errorResponse()` from `workspace.ts`.
 
 ### MCP gateway
 
-- `app/api/mcp/route.ts` owns MCP protocol handling, tool/resource descriptors, bearer authentication boundary, and tool-call audit events.
+- `app/api/mcp/route.ts` owns MCP protocol handling, tool/resource descriptors, Workspace-ID join validation, and tool-call audit events.
 - `app/api/_lib/relay-service.ts` is the transport-neutral application layer shared by MCP and Web API routes.
 - `relay_preflight` must precede `relay_execute`; direct execute attempts fail because no matching `token_estimates` authorization record exists.
 - `relay_execute` never invokes a generation model for RAG/Full Generation. It returns `agent_action_required`, a bounded context payload, and `requiredNextTool: relay_submit_result`.
 - `relay_submit_result` must be called by the same MCP identity with the unchanged question. It stores the host-agent answer in memory and shared chat and consumes the preflight.
-- `RELAY_MCP_ACCESS_TOKENS` maps independent bearer tokens to member identities. Never reuse a single token for all members in production.
+- `RELAY_MCP_JOIN_MODE=workspace_id` enables the low-friction Hackathon Demo join flow. The `workspace_id` query value must match `RELAY_WORKSPACE_ID`; the optional `member` value is only an audit label, not verified identity. For a real production deployment, switch to `bearer_token` and configure independent `RELAY_MCP_ACCESS_TOKENS` values.
 - MCP cannot control how a third-party host performs its internal inference. Relay controls shared-memory access and requires the result-submission lifecycle before host output becomes reusable team knowledge.
 
 ### Shared domain layer

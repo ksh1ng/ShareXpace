@@ -289,7 +289,7 @@ export async function OPTIONS() {
 }
 
 export async function GET() {
-  return Response.json({ name: "Relay Shared AI Workspace MCP Server", protocolVersion: PROTOCOL_VERSION, endpoint: "/api/mcp" }, { headers: JSON_HEADERS });
+  return Response.json({ name: "Relay Shared AI Workspace MCP Server", protocolVersion: PROTOCOL_VERSION, endpoint: "/api/mcp?workspace_id=<workspace-id>&member=<display-name>", joinMode: "workspace_id" }, { headers: JSON_HEADERS });
 }
 
 export async function POST(request: Request) {
