@@ -38,7 +38,6 @@ cleanup() {
   if [ -n "$TEMP_INSTALLER" ] && [ -f "$TEMP_INSTALLER" ]; then
     rm -f "$TEMP_INSTALLER"
   fi
-  unset member_token 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 
@@ -69,29 +68,26 @@ export PATH="$HOME/.local/bin:$PATH"
 command -v codex >/dev/null 2>&1 || fail "Codex was not found after installation. Open a new Terminal and run this installer again."
 codex --version
 
-step "Reading the Relay member token"
-if [ -n "${RELAY_MCP_TOKEN:-}" ]; then
-  member_token="$RELAY_MCP_TOKEN"
-  printf 'Using RELAY_MCP_TOKEN already present in this Terminal.\n'
-else
-  printf 'Paste the Member token from the Workspace administrator, then press Enter.\n'
-  printf 'The token will stay hidden: '
-  if [ -r /dev/tty ]; then
-    IFS= read -r -s member_token </dev/tty
-  else
-    IFS= read -r -s member_token
-  fi
-  printf '\n'
+step "Joining the Relay workspace"
+workspace_id="${RELAY_WORKSPACE_ID:-$WORKSPACE_ID}"
+member_name="${RELAY_MEMBER_NAME:-DemoMember}"
+if [ -r /dev/tty ]; then
+  printf 'Workspace ID [%s]: ' "$workspace_id"
+  IFS= read -r entered_workspace_id </dev/tty
+  workspace_id="${entered_workspace_id:-$workspace_id}"
+  printf 'Display name [%s]: ' "$member_name"
+  IFS= read -r entered_member_name </dev/tty
+  member_name="${entered_member_name:-$member_name}"
 fi
 
-[ -n "${member_token:-}" ] || fail "Member token cannot be empty."
-export RELAY_MCP_TOKEN="$member_token"
+case "$workspace_id" in *[!a-zA-Z0-9_.-]*|'') fail "Workspace ID may contain only letters, numbers, dots, underscores, and hyphens." ;; esac
+case "$member_name" in *[!a-zA-Z0-9_.-]*|'') fail "Display name may contain only letters, numbers, dots, underscores, and hyphens." ;; esac
+connection_url="${RELAY_URL}?workspace_id=${workspace_id}&member=${member_name}"
 
+# Remove the credential left by installer versions that predated Workspace-ID join mode.
+unset RELAY_MCP_TOKEN 2>/dev/null || true
 if [ "$(uname -s)" = "Darwin" ] && command -v launchctl >/dev/null 2>&1; then
-  launchctl setenv RELAY_MCP_TOKEN "$RELAY_MCP_TOKEN"
-  printf 'Configured the current macOS login session for the Codex App.\n'
-else
-  printf 'Linux note: the token is available to Codex launched by this installer only.\n'
+  launchctl unsetenv RELAY_MCP_TOKEN >/dev/null 2>&1 || true
 fi
 
 step "Registering Relay MCP in Codex"
@@ -100,8 +96,7 @@ if codex mcp get "$RELAY_NAME" >/dev/null 2>&1; then
 fi
 
 codex mcp add "$RELAY_NAME" \
-  --url "$RELAY_URL" \
-  --bearer-token-env-var RELAY_MCP_TOKEN
+  --url "$connection_url"
 
 step "Verifying the saved MCP configuration"
 codex mcp get "$RELAY_NAME" --json
@@ -111,8 +106,9 @@ cat <<EOF
 Relay Demo setup is complete.
 
 Workspace name: $WORKSPACE_NAME
-Workspace ID:   $WORKSPACE_ID
-MCP server:     $RELAY_URL
+Workspace ID:   $workspace_id
+Member label:   $member_name
+MCP server:     $connection_url
 
 In Codex, send this first message:
   請使用 Relay MCP 的 relay_get_workspace，回報 Workspace name 與 Workspace ID。
@@ -120,11 +116,9 @@ In Codex, send this first message:
 If this is your first Codex launch, choose "Sign in with ChatGPT" when prompted.
 To remove the demo setup later:
   codex mcp remove $RELAY_NAME
-  launchctl unsetenv RELAY_MCP_TOKEN   # macOS only
 EOF
 
 if [ "$LAUNCH_CODEX" -eq 1 ]; then
   step "Starting Codex"
   exec codex
 fi
-

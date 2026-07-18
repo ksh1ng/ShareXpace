@@ -21,6 +21,7 @@ type RuntimeEnv = {
   RELAY_MAX_OUTPUT_TOKENS?: string;
   RELAY_MAX_INPUT_TOKENS?: string;
   RELAY_ALLOW_LOCAL_ANONYMOUS?: string;
+  RELAY_MCP_JOIN_MODE?: string;
   RELAY_MCP_ACCESS_TOKENS?: string;
 };
 
@@ -122,6 +123,10 @@ export function appMode() {
   return runtimeEnv().RELAY_APP_MODE?.trim() || "production";
 }
 
+export function mcpJoinMode() {
+  return runtimeEnv().RELAY_MCP_JOIN_MODE?.trim() === "workspace_id" ? "workspace_id" : "bearer_token";
+}
+
 export function tokenLimits() {
   const current = runtimeEnv();
   return {
@@ -211,6 +216,16 @@ async function sameSecret(left: string, right: string) {
 export async function requireMcpActor(request: Request) {
   const sitesActor = actorFrom(request);
   if (sitesActor) return sitesActor;
+  if (mcpJoinMode() === "workspace_id") {
+    const url = new URL(request.url);
+    const suppliedWorkspaceId = url.searchParams.get("workspace_id")?.trim() || "";
+    if (!suppliedWorkspaceId || !await sameSecret(workspaceId(), suppliedWorkspaceId)) {
+      throw new ApiError("A valid Workspace ID is required in the MCP URL.", 403, "workspace_access_denied");
+    }
+    const suppliedMember = url.searchParams.get("member")?.trim() || "";
+    const member = suppliedMember.replace(/[^a-zA-Z0-9_. -]/g, "").slice(0, 80).trim();
+    return member || "Workspace Member";
+  }
   const authorization = request.headers.get("authorization") ?? "";
   const supplied = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
   const configured = configuredMcpTokens();

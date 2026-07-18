@@ -39,7 +39,7 @@ The stateless Streamable HTTP-compatible endpoint is `https://<relay-host>/api/m
 - `relay_post_update` — return agent progress or results to the shared chat without an LLM call.
 - `relay_get_workspace` — read route, savings, memory and MCP activity state.
 
-Resources are available at `relay://workspace/<workspace-id>/{summary,memory,activity,savings}`. Configure a per-member bearer token in `RELAY_MCP_ACCESS_TOKENS`; the value is a JSON object mapping secret tokens to member names. MCP calls are recorded in `mcp_events`, and the Dashboard shows connected identities and audited calls.
+Resources are available at `relay://workspace/<workspace-id>/{summary,memory,activity,savings}`. The Hackathon Demo uses `RELAY_MCP_JOIN_MODE=workspace_id`: clients append the Workspace ID and an optional display label to the MCP URL, for example `/api/mcp?workspace_id=relay-production&member=Alice`. MCP calls are recorded in `mcp_events`, and the Dashboard shows member labels, clients and audited calls.
 
 ## Token lifecycle
 
@@ -68,7 +68,7 @@ flowchart LR
 
 ## Production safeguards
 
-- Sites authentication is required in hosted environments. Local anonymous access is opt-in only.
+- Sites authentication protects the hosted Dashboard. The Hackathon MCP endpoint deliberately accepts the displayed Workspace ID as its join code; this is convenient for a demo but is not a production authorization boundary.
 - Token estimates expire, are bound to the member and exact request, and are atomically single-use.
 - Stale, transactional, refresh-required, expired, or superseded records cannot be returned by Semantic Cache.
 - Refresh creates a new record version and preserves the old record as superseded.
@@ -109,7 +109,8 @@ Apply every SQL file in `drizzle/` to the production D1 database before serving 
 | `RELAY_MAX_OUTPUT_TOKENS` | no | Generation output ceiling; default `1200` |
 | `RELAY_MAX_INPUT_TOKENS` | no | Workspace input safety limit; default `100000` |
 | `RELAY_ALLOW_LOCAL_ANONYMOUS` | local only | Explicitly permits a local anonymous actor |
-| `RELAY_MCP_ACCESS_TOKENS` | for MCP | Secret JSON map of bearer tokens to workspace member names |
+| `RELAY_MCP_JOIN_MODE` | yes | `workspace_id` for the Hackathon Demo; use `bearer_token` for stricter deployments |
+| `RELAY_MCP_ACCESS_TOKENS` | bearer mode only | Optional secret JSON map of bearer tokens to workspace member names |
 
 Bindings are declared in `.openai/hosting.json`: D1 as `DB` and R2 as `FILES`. Hosted access is private by default through Sites authentication.
 
