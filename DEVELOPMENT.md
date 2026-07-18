@@ -66,6 +66,7 @@ Every route uses `requireActor()` and `errorResponse()` from `workspace.ts`.
 ### MCP gateway
 
 - `app/api/mcp/route.ts` owns MCP protocol handling, tool/resource descriptors, Workspace-ID join validation, and tool-call audit events.
+- `app/layout.tsx` enforces Dashboard SIWC after the Sites dispatch layer is made public for remote MCP transport. Route handlers under `app/api/mcp` are not wrapped by the page layout; browser APIs retain their own `requireActor` checks.
 - `app/api/_lib/relay-service.ts` is the transport-neutral application layer shared by MCP and Web API routes.
 - `relay_preflight` must precede `relay_execute`; direct execute attempts fail because no matching `token_estimates` authorization record exists.
 - `relay_execute` never invokes a generation model for RAG/Full Generation. It returns `agent_action_required`, a bounded context payload, and `requiredNextTool: relay_submit_result`.

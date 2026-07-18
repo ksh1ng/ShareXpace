@@ -176,11 +176,13 @@ test("demo guide includes beginner Codex MCP setup and verification", async () =
 });
 
 test("production removes runtime demo bootstrap and requires identity", async () => {
-  const [workspace, envExample, hosting, readme] = await Promise.all([
+  const [workspace, envExample, hosting, readme, layout, stateRoute] = await Promise.all([
     read("../app/api/_lib/workspace.ts"),
     read("../.env.example"),
     read("../.openai/hosting.json"),
     read("../README.md"),
+    read("../app/layout.tsx"),
+    read("../app/api/state/route.ts"),
   ]);
 
   assert.match(workspace, /requireActor/);
@@ -190,5 +192,9 @@ test("production removes runtime demo bootstrap and requires identity", async ()
   assert.match(hosting, /"d1": "DB"/);
   assert.match(hosting, /"project_id": "appgprj_/);
   assert.match(readme, /no demo seeds/);
+  assert.match(layout, /requireChatGPTUser\("\/"\)/);
+  assert.match(layout, /force-dynamic/);
+  assert.match(stateRoute, /requireActor\(request\)/);
+  assert.match(readme, /public at the dispatch layer/);
   await access(new URL("../dist/server/index.js", import.meta.url));
 });
