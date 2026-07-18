@@ -39,7 +39,7 @@ The stateless Streamable HTTP-compatible endpoint is `https://<relay-host>/api/m
 - `relay_post_update` — return agent progress or results to the shared chat without an LLM call.
 - `relay_get_workspace` — read route, savings, memory and MCP activity state.
 
-Resources are available at `relay://workspace/<workspace-id>/{summary,memory,activity,savings}`. The Hackathon Demo uses `RELAY_MCP_JOIN_MODE=workspace_id`: clients append the Workspace ID and an optional display label to the MCP URL, for example `/api/mcp?workspace_id=relay-production&member=Alice`. MCP calls are recorded in `mcp_events`, and the Dashboard shows member labels, clients and audited calls.
+Resources are available at `relay://workspace/<workspace-id>/{summary,memory,activity,savings}`. The Hackathon Demo uses `RELAY_MCP_JOIN_MODE=workspace_id`: clients append the Workspace ID and an optional display label to the MCP URL, for example `/api/mcp?workspace_id=relay-production&member=Alice`. The Sites dispatch access mode must be `public` so non-browser MCP clients reach the Worker instead of receiving the Sign in with ChatGPT HTML page. The root layout still requires ChatGPT sign-in for the Dashboard, and browser data/write routes enforce authenticated-user headers. MCP calls are recorded in `mcp_events`, and the Dashboard shows member labels, clients and audited calls.
 
 ## Token lifecycle
 
@@ -68,7 +68,8 @@ flowchart LR
 
 ## Production safeguards
 
-- Sites authentication protects the hosted Dashboard. The Hackathon MCP endpoint deliberately accepts the displayed Workspace ID as its join code; this is convenient for a demo but is not a production authorization boundary.
+- The Sites project is public at the dispatch layer because Codex CLI cannot complete the Dashboard's browser SIWC redirect during MCP initialization. `app/layout.tsx` protects the Dashboard with `requireChatGPTUser`, while browser APIs still call `requireActor`.
+- The Hackathon MCP endpoint deliberately accepts the displayed Workspace ID as its join code; this is convenient for a demo but is not a production authorization boundary.
 - Token estimates expire, are bound to the member and exact request, and are atomically single-use.
 - Stale, transactional, refresh-required, expired, or superseded records cannot be returned by Semantic Cache.
 - Refresh creates a new record version and preserves the old record as superseded.

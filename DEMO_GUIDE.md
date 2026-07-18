@@ -320,6 +320,10 @@ codex mcp remove relay
 
 代表 MCP URL 沒有 `workspace_id`，或 ID 與目前部署不一致。回到 Dashboard 重新複製 ID並重建 `relay` MCP 設定。
 
+#### MCP startup 顯示 `HTTP 401` 與 `Sign in required` HTML
+
+這不是 Workspace ID 錯誤，而是 Sites 外層存取政策攔住 MCP transport。此版本的 Production Site 已改為 public dispatch，讓 Codex CLI 能直接到達 `/api/mcp`；Dashboard 頁面仍由 `app/layout.tsx` 要求 Sign in with ChatGPT，browser API 也會驗證登入身份。若仍看到舊錯誤，請確認 URL 指向目前 Production host，執行 `codex mcp remove relay` 後重新跑 installer，再建立新的 Codex session。
+
 #### MCP URL 貼進瀏覽器只看到錯誤或空白
 
 這是正常的。`/api/mcp` 是給 MCP Client 傳送 JSON-RPC 的 endpoint，不是一般網頁。人類應開 Dashboard 根網址，Codex 才連 `/api/mcp`。
