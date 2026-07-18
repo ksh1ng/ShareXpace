@@ -163,8 +163,9 @@ export async function relayReuse(input: {
       acceptCachedAnswer: { required: false, description: "No further Relay call is required." },
       refreshWithTeamKnowledge: {
         tool: "relay_rag_refresh_preflight",
-        arguments: { recordId: record.id, question },
-        description: "Explicitly request a RAG revision after reviewing this cached answer.",
+        requiresUserConfirmation: true,
+        argumentsAfterConfirmation: { recordId: record.id, question, confirmedByUser: true },
+        description: "Ask the member first. Only call this tool in a later turn after the member explicitly requests a RAG revision.",
       },
     },
     usage: {

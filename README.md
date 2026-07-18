@@ -49,7 +49,7 @@ Every agent action is a two-step transaction:
    A fresh exact fingerprint always wins over `generate_with_team_knowledge`; that operation can force RAG only for non-exact related questions.
 2. The UI displays exact planned input tokens, the configured output ceiling, and the estimate expiry. Submission must include the short-lived estimate ID.
 3. The server validates actor, prompt fingerprint, route, operation, matched record, TTL, and single-use state, then atomically claims the handoff.
-4. Semantic Cache finishes immediately and prints the complete stored answer in the MCP response. The member can accept it without another call or explicitly run `relay_rag_refresh_preflight` to request a RAG revision. RAG/Full Generation returns context to the host agent, which generates with its own model and calls `relay_submit_result` to persist the answer and optional host-reported usage. A submitted RAG revision preserves and supersedes the old record.
+4. Semantic Cache finishes immediately and prints the complete stored answer in the MCP response. The host must ask whether the member accepts it or wants a RAG update, end the turn, and wait. Acceptance triggers no tool; only an explicit update reply permits `relay_rag_refresh_preflight` with `confirmedByUser=true`. RAG/Full Generation returns context to the host agent, which generates with its own model and calls `relay_submit_result` to persist the answer and optional host-reported usage. A submitted RAG revision preserves and supersedes the old record.
 
 An output token count cannot be known before generation, so the preflight shows `max_output_tokens`, not a fabricated prediction.
 

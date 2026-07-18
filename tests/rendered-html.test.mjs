@@ -112,7 +112,11 @@ test("MCP routes cache locally and hands RAG/full work to the host agent", async
   assert.match(relayService, /refreshWithTeamKnowledge/);
   assert.match(mcpRoute, /## Cached answer/);
   assert.match(mcpRoute, /Display it to the member/);
-  assert.match(mcpRoute, /Revise it with current team knowledge/);
+  assert.match(mcpRoute, /Only if the member explicitly requests an update/);
+  assert.match(mcpRoute, /MANDATORY HOST BEHAVIOR/);
+  assert.match(mcpRoute, /Do not call another Relay tool in this turn/);
+  assert.match(mcpRoute, /confirmedByUser/);
+  assert.match(mcpRoute, /user_confirmation_required/);
   assert.match(workspace, /operation === "rag_refresh"/);
   assert.match(workspace, /keep\n  \/\/ routing local and deterministic|routing local and deterministic/);
   assert.match(workspace, /RELAY_MCP_JOIN_MODE/);
