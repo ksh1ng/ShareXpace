@@ -101,6 +101,7 @@ Apply every SQL file in `drizzle/` to the production D1 database before serving 
 | `OPENAI_API_KEY` | optional | Enables exact OpenAI input counting and provides an embedding fallback; MCP generation remains in the host agent |
 | `RELAY_APP_MODE` | yes | Set to `production` |
 | `RELAY_WORKSPACE_ID` | yes | Stable D1 partition and prompt-cache namespace |
+| `RELAY_WORKSPACE_NAME` | yes | Human-readable workspace name shown by the Dashboard and MCP workspace status |
 | `RELAY_SEMANTIC_CACHE_THRESHOLD` | no | High-similarity direct reuse threshold; default `0.78` |
 | `RELAY_RAG_THRESHOLD` | no | Medium-similarity RAG threshold; default `0.42` |
 | `RELAY_DEFAULT_TTL_HOURS` | no | Default TTL for dynamic knowledge; default `24` |

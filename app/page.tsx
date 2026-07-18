@@ -124,6 +124,11 @@ type EmbeddingStatus = {
   dimensions: number;
 };
 
+type WorkspaceInfo = {
+  id: string;
+  name: string;
+};
+
 const agents = [
   { initials: "YA", name: "Your agent", role: "Workspace collaborator", color: "gold" },
 ];
@@ -159,6 +164,7 @@ export default function Home() {
   const [pendingChatRun, setPendingChatRun] = useState<{ sourceMessageId: string; instruction: string; estimate: TokenEstimate } | null>(null);
   const [mcp, setMcp] = useState<McpStatus>({ enabled: false, members: [], events: [] });
   const [embedding, setEmbedding] = useState<EmbeddingStatus>({ ready: false, provider: "lexical", model: null, dimensions: 0 });
+  const [workspace, setWorkspace] = useState<WorkspaceInfo>({ id: "", name: "Loading workspace…" });
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -167,7 +173,7 @@ export default function Home() {
         if (!response.ok) throw new Error("The shared workspace could not be loaded.");
         return response.json();
       })
-      .then((data: { records: MemoryItem[]; stats: { tokensSaved: number; duplicates: number }; promptCache: PromptCache; defense: DefenseStats; modelReady: boolean; mcp: McpStatus; embedding: EmbeddingStatus }) => {
+      .then((data: { records: MemoryItem[]; stats: { tokensSaved: number; duplicates: number }; promptCache: PromptCache; defense: DefenseStats; modelReady: boolean; mcp: McpStatus; embedding: EmbeddingStatus; workspace: WorkspaceInfo; workspaceId?: string; workspaceName?: string }) => {
         setMemory(data.records);
         setDuplicates(data.stats.duplicates);
         setPromptCache(data.promptCache);
@@ -175,6 +181,10 @@ export default function Home() {
         setModelReady(data.modelReady);
         setMcp(data.mcp);
         setEmbedding(data.embedding);
+        setWorkspace(data.workspace ?? {
+          id: data.workspaceId ?? "unknown-workspace",
+          name: data.workspaceName ?? "Relay Workspace",
+        });
       })
       .catch((reason: Error) => setError(reason.message))
       .finally(() => setLoadingWorkspace(false));
@@ -193,6 +203,17 @@ export default function Home() {
     () => memory.filter((item) => filter === "all" || item.kind === filter),
     [filter, memory],
   );
+
+  async function copyWorkspaceId() {
+    if (!workspace.id) return;
+    try {
+      await navigator.clipboard.writeText(workspace.id);
+      setToast("Workspace ID copied");
+      window.setTimeout(() => setToast(""), 2200);
+    } catch {
+      setError("Unable to copy the Workspace ID. Select and copy it manually.");
+    }
+  }
 
   async function requestEstimate(question: string, operation: TokenOperation = "auto", recordId?: string) {
     if (billingMode === "personal" && !personalApiKey.trim()) throw new Error("Add your personal OpenAI API key first.");
@@ -416,10 +437,10 @@ export default function Home() {
           <span>relay</span>
         </a>
 
-        <button className="workspace-switcher" type="button">
+        <button className="workspace-switcher" type="button" onClick={copyWorkspaceId} aria-label={`Copy Workspace ID ${workspace.id}`} title="Copy Workspace ID">
           <span className="workspace-icon">✦</span>
-          <span><b>Relay production</b><small>Shared workspace</small></span>
-          <span className="chevrons">⌃<br />⌄</span>
+          <span><b>{workspace.name}</b><small>ID · {workspace.id || "Loading…"}</small></span>
+          <span className="copy-workspace-mark" aria-hidden="true">Copy</span>
         </button>
 
         <nav className="main-nav" aria-label="Main navigation">
@@ -458,7 +479,7 @@ export default function Home() {
 
       <section className="main-panel">
         <header className="topbar">
-          <div className="breadcrumb"><span>Workspaces</span><b>/</b><strong>Relay production</strong><span className="live-pill"><i /> Authenticated workspace</span><span className="mode-pill live">PRODUCTION</span></div>
+          <div className="breadcrumb"><span>Workspaces</span><b>/</b><strong>{workspace.name}</strong><button className="workspace-id-chip" type="button" onClick={copyWorkspaceId} title="Copy Workspace ID" aria-label={`Copy Workspace ID ${workspace.id}`}>{workspace.id || "Loading…"}</button><span className="live-pill"><i /> Authenticated workspace</span><span className="mode-pill live">PRODUCTION</span></div>
           <div className="top-actions">
             <button className="icon-button" aria-label="Search" type="button">⌕</button>
             <button className="icon-button notification" aria-label="Notifications" type="button">♢<i /></button>

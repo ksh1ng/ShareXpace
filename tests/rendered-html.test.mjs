@@ -124,6 +124,26 @@ test("semantic retrieval supports Gemini with cached vectors and safe fallback",
   assert.match(readme, /one query embedding/);
 });
 
+test("dashboard and MCP expose the configured workspace identity", async () => {
+  const [page, stateRoute, mcpRoute, workspace, envExample] = await Promise.all([
+    read("../app/page.tsx"),
+    read("../app/api/state/route.ts"),
+    read("../app/api/mcp/route.ts"),
+    read("../app/api/_lib/workspace.ts"),
+    read("../.env.example"),
+  ]);
+
+  assert.match(workspace, /RELAY_WORKSPACE_NAME/);
+  assert.match(workspace, /const name = workspaceName\(\)/);
+  assert.match(workspace, /workspace: \{ id, name \}/);
+  assert.match(stateRoute, /workspace: state\.workspace/);
+  assert.match(mcpRoute, /workspace: state\.workspace/);
+  assert.match(page, /setWorkspace\(data\.workspace/);
+  assert.match(page, /Workspace ID copied/);
+  assert.match(page, /workspace-id-chip/);
+  assert.match(envExample, /RELAY_WORKSPACE_NAME=RoamTogether Development/);
+});
+
 test("production removes runtime demo bootstrap and requires identity", async () => {
   const [workspace, envExample, hosting, readme] = await Promise.all([
     read("../app/api/_lib/workspace.ts"),
