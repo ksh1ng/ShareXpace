@@ -33,6 +33,7 @@ export async function GET(request: Request) {
       defense: state.defense,
       mcp: state.mcp,
       modelReady: state.modelReady,
+      embedding: state.embedding,
       appMode: state.appMode,
       workspaceId: state.workspaceId,
     });

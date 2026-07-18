@@ -9,6 +9,8 @@ type RuntimeEnv = {
   DB: D1Database;
   FILES?: R2Bucket;
   OPENAI_API_KEY?: string;
+  GEMINI_API_KEY?: string;
+  RELAY_EMBEDDING_PROVIDER?: string;
   RELAY_APP_MODE?: string;
   RELAY_WORKSPACE_ID?: string;
   RELAY_SEMANTIC_CACHE_THRESHOLD?: string;
@@ -489,6 +491,10 @@ export async function getWorkspaceState() {
       knowledgeVersion: cacheState?.knowledge_version ?? 1,
     },
     modelReady: Boolean(OPENAI_API_KEY?.trim()),
+    embedding: (() => {
+      const status = embeddingProviderStatus();
+      return { ready: status.ready, provider: status.provider, model: status.model, dimensions: status.dimensions };
+    })(),
     mcp: {
       enabled: configuredMcpTokens().size > 0 || runtimeEnv().RELAY_ALLOW_LOCAL_ANONYMOUS === "true",
       members: mcpMembers.results.map((member) => ({ actor: member.actor, clientName: member.client_name, lastSeen: member.last_seen, calls: member.calls })),
@@ -519,17 +525,81 @@ type EmbeddingResponse = {
   usage?: { prompt_tokens?: number; total_tokens?: number };
 };
 
-async function createEmbeddings(apiKey: string, inputs: string[]) {
+type GeminiEmbeddingResponse = {
+  embeddings?: Array<{ values?: number[] }>;
+  usageMetadata?: { promptTokenCount?: number };
+};
+
+type EmbeddingProvider = {
+  kind: "gemini" | "openai";
+  model: string;
+  dimensions: number;
+  apiKey: string;
+};
+
+export function embeddingProviderStatus(openAiApiKey?: string) {
+  const current = runtimeEnv();
+  const preference = current.RELAY_EMBEDDING_PROVIDER?.trim().toLowerCase() || "auto";
+  const geminiKey = current.GEMINI_API_KEY?.trim();
+  const openAiKey = openAiApiKey?.trim() || current.OPENAI_API_KEY?.trim();
+  const provider: EmbeddingProvider | null = preference === "lexical"
+    ? null
+    : preference === "gemini"
+      ? geminiKey ? { kind: "gemini", model: "gemini-embedding-001", dimensions: 768, apiKey: geminiKey } : null
+      : preference === "openai"
+        ? openAiKey ? { kind: "openai", model: "text-embedding-3-small", dimensions: 256, apiKey: openAiKey } : null
+        : geminiKey
+          ? { kind: "gemini", model: "gemini-embedding-001", dimensions: 768, apiKey: geminiKey }
+          : openAiKey
+            ? { kind: "openai", model: "text-embedding-3-small", dimensions: 256, apiKey: openAiKey }
+            : null;
+  return {
+    ready: Boolean(provider),
+    provider: provider?.kind ?? "lexical",
+    model: provider?.model ?? null,
+    dimensions: provider?.dimensions ?? 0,
+    preference,
+    config: provider,
+  };
+}
+
+async function createOpenAiEmbeddings(provider: EmbeddingProvider, inputs: string[]) {
   const response = await fetch("https://api.openai.com/v1/embeddings", {
     method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "text-embedding-3-small", input: inputs, encoding_format: "float", dimensions: 256 }),
+    headers: { Authorization: `Bearer ${provider.apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: provider.model, input: inputs, encoding_format: "float", dimensions: provider.dimensions }),
   });
   if (!response.ok) throw new ApiError(`Embedding request failed (${response.status}).`, 502, "embedding_failed");
   const data = await response.json() as EmbeddingResponse;
   return {
     vectors: (data.data ?? []).sort((a, b) => a.index - b.index).map((item) => item.embedding),
     inputTokens: data.usage?.prompt_tokens ?? data.usage?.total_tokens ?? 0,
+  };
+}
+
+async function createGeminiEmbeddings(provider: EmbeddingProvider, query: string, documents: string[]) {
+  const requests = [
+    { text: query, taskType: "RETRIEVAL_QUERY" },
+    ...documents.map((text) => ({ text, taskType: "RETRIEVAL_DOCUMENT" })),
+  ];
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${provider.model}:batchEmbedContents`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": provider.apiKey },
+    body: JSON.stringify({
+      requests: requests.map((request) => ({
+        model: `models/${provider.model}`,
+        content: { parts: [{ text: request.text }] },
+        taskType: request.taskType,
+        outputDimensionality: provider.dimensions,
+        autoTruncate: true,
+      })),
+    }),
+  });
+  if (!response.ok) throw new ApiError(`Gemini embedding request failed (${response.status}).`, 502, "embedding_failed");
+  const data = await response.json() as GeminiEmbeddingResponse;
+  return {
+    vectors: (data.embeddings ?? []).map((item) => item.values ?? []),
+    inputTokens: data.usageMetadata?.promptTokenCount ?? 0,
   };
 }
 
@@ -559,15 +629,16 @@ export async function retrieveWorkspaceAnswers(question: string, apiKey?: string
     return { matches: [{ record: exact, score: 1, lexicalScore: 1, semanticScore: 1, matchType: "exact" as const, retrievalMode: "exact" as const, freshness: freshness(exact) }], embeddingInputTokens: 0 };
   }
 
-  const results = (await DB.prepare("SELECT * FROM memory_records WHERE workspace_id = ? AND kind = 'answer' AND superseded_by IS NULL ORDER BY created_at DESC LIMIT 100")
+  const results = (await DB.prepare("SELECT * FROM memory_records WHERE workspace_id = ? AND kind = 'answer' AND superseded_by IS NULL ORDER BY created_at DESC LIMIT 80")
     .bind(id)
     .all<MemoryRow>()).results;
   if (!results.length) return { matches: [], embeddingInputTokens: 0 };
   const lexical = results.map((record) => ({ record, lexicalScore: similarity(question, `${record.title} ${record.summary ?? ""}`) }));
 
-  // MCP hosts already have an LLM. When Relay has no provider credential, keep
+  // MCP hosts already have an LLM. When Relay has no embedding credential, keep
   // routing local and deterministic instead of blocking the agent handoff.
-  if (!apiKey) {
+  const embedding = embeddingProviderStatus(apiKey);
+  if (!embedding.config) {
     const matches = lexical.map((item) => ({
       ...item,
       score: item.lexicalScore,
@@ -576,38 +647,42 @@ export async function retrieveWorkspaceAnswers(question: string, apiKey?: string
       retrievalMode: "lexical" as const,
       freshness: freshness(item.record),
     })).sort((a, b) => b.score - a.score).slice(0, limit);
-    return { matches, embeddingInputTokens: 0 };
+    return { matches, embeddingInputTokens: 0, embeddingProvider: "lexical" as const };
   }
 
-  const stored = await DB.prepare("SELECT record_id, embedding_json FROM record_embeddings WHERE workspace_id = ? AND model = 'text-embedding-3-small' AND dimensions = 256")
-    .bind(id)
+  const provider = embedding.config;
+  const stored = await DB.prepare("SELECT record_id, embedding_json FROM record_embeddings WHERE workspace_id = ? AND model = ? AND dimensions = ?")
+    .bind(id, provider.model, provider.dimensions)
     .all<{ record_id: string; embedding_json: string }>();
   const vectors = new Map(stored.results.map((row) => [row.record_id, JSON.parse(row.embedding_json) as number[]]));
-  const fingerprint = await questionFingerprint(question);
-  const queryKey = `query:${fingerprint}`;
   const missing = results.filter((record) => !vectors.has(record.id));
-  const inputs = [...(vectors.has(queryKey) ? [] : [question]), ...missing.map((record) => `${record.title}\n${record.summary ?? record.detail}`)];
-  const generated = inputs.length ? await createEmbeddings(apiKey, inputs) : { vectors: [], inputTokens: 0 };
-  let cursor = 0;
-  let query = vectors.get(queryKey);
-  if (!query) {
-    query = generated.vectors[cursor];
-    cursor += 1;
-    if (query) {
-      vectors.set(queryKey, query);
-      await DB.prepare("INSERT OR REPLACE INTO record_embeddings (record_id, workspace_id, model, dimensions, embedding_json, created_at) VALUES (?, ?, 'text-embedding-3-small', 256, ?, ?)")
-        .bind(queryKey, id, JSON.stringify(query), new Date().toISOString())
-        .run();
-    }
+  const documents = missing.map((record) => `${record.title}\n${record.summary ?? record.detail}`);
+  let generated: { vectors: number[][]; inputTokens: number };
+  try {
+    generated = provider.kind === "gemini"
+      ? await createGeminiEmbeddings(provider, question, documents)
+      : await createOpenAiEmbeddings(provider, [question, ...documents]);
+  } catch {
+    const matches = lexical.map((item) => ({
+      ...item,
+      score: item.lexicalScore,
+      semanticScore: 0,
+      matchType: "similar" as const,
+      retrievalMode: "lexical" as const,
+      freshness: freshness(item.record),
+    })).sort((a, b) => b.score - a.score).slice(0, limit);
+    return { matches, embeddingInputTokens: 0, embeddingProvider: "lexical_fallback" as const };
   }
+  let cursor = 1;
+  const query = generated.vectors[0];
   if (!query) throw new ApiError("Embedding response was empty.", 502, "embedding_empty");
   if (missing.length) {
     await DB.batch(missing.map((record) => {
       const vector = generated.vectors[cursor] ?? [];
       cursor += 1;
       vectors.set(record.id, vector);
-      return DB.prepare("INSERT OR REPLACE INTO record_embeddings (record_id, workspace_id, model, dimensions, embedding_json, created_at) VALUES (?, ?, 'text-embedding-3-small', 256, ?, ?)")
-        .bind(record.id, id, JSON.stringify(vector), new Date().toISOString());
+      return DB.prepare("INSERT OR REPLACE INTO record_embeddings (record_id, workspace_id, model, dimensions, embedding_json, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+        .bind(record.id, id, provider.model, provider.dimensions, JSON.stringify(vector), new Date().toISOString());
     }));
   }
   const matches = lexical.map((item) => {
@@ -621,7 +696,7 @@ export async function retrieveWorkspaceAnswers(question: string, apiKey?: string
       freshness: freshness(item.record),
     };
   }).sort((a, b) => b.score - a.score).slice(0, limit);
-  return { matches, embeddingInputTokens: generated.inputTokens };
+  return { matches, embeddingInputTokens: generated.inputTokens, embeddingProvider: provider.kind };
 }
 
 export function classifyDefenseRoute(

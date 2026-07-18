@@ -107,6 +107,23 @@ test("MCP routes cache locally and hands RAG/full work to the host agent", async
   assert.match(page, /relay_preflight/);
 });
 
+test("semantic retrieval supports Gemini with cached vectors and safe fallback", async () => {
+  const [workspace, envExample, readme] = await Promise.all([
+    read("../app/api/_lib/workspace.ts"),
+    read("../.env.example"),
+    read("../README.md"),
+  ]);
+  assert.match(workspace, /batchEmbedContents/);
+  assert.match(workspace, /RETRIEVAL_QUERY/);
+  assert.match(workspace, /RETRIEVAL_DOCUMENT/);
+  assert.match(workspace, /outputDimensionality: provider\.dimensions/);
+  assert.match(workspace, /lexical_fallback/);
+  assert.match(workspace, /model = \? AND dimensions = \?/);
+  assert.match(envExample, /GEMINI_API_KEY=/);
+  assert.match(envExample, /RELAY_EMBEDDING_PROVIDER=auto/);
+  assert.match(readme, /one query embedding/);
+});
+
 test("production removes runtime demo bootstrap and requires identity", async () => {
   const [workspace, envExample, hosting, readme] = await Promise.all([
     read("../app/api/_lib/workspace.ts"),
