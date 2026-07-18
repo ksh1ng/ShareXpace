@@ -146,6 +146,9 @@ test("dashboard and MCP expose the configured workspace identity", async () => {
 
 test("demo guide includes beginner Codex MCP setup and verification", async () => {
   const guide = await read("../DEMO_GUIDE.md");
+  assert.match(guide, /curl -fsSL https:\/\/chatgpt\.com\/codex\/install\.sh \| sh/);
+  assert.match(guide, /codex --version/);
+  assert.match(guide, /Sign in with ChatGPT/);
   assert.match(guide, /codex mcp add relay/);
   assert.match(guide, /--bearer-token-env-var RELAY_MCP_TOKEN/);
   assert.match(guide, /launchctl setenv RELAY_MCP_TOKEN/);
