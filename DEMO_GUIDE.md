@@ -428,11 +428,12 @@ Create a five-day Tokyo itinerary for our team. Prioritize walkable neighborhood
 ```text
 relay.relay_rag_refresh_preflight({
   "recordId": "relay_execute 回傳的 record ID",
-  "question": "原本的完整問題"
+  "question": "原本的完整問題",
+  "confirmedByUser": true
 })
 ```
 
-再把新的 `preflightId` 交給 `relay_execute`。Codex 依 RAG handoff 產生新版後，呼叫 `relay_submit_result`，Relay 會保留舊紀錄並建立新版。
+重要：Codex 顯示完整 cached answer 後，必須先問使用者「接受舊答案」或「使用 RAG 更新」，然後結束當前 turn 等待回答。接受時不呼叫任何工具；只有使用者在下一個 turn 明確選擇更新，才帶 `confirmedByUser: true` 呼叫上述工具。再把新的 `preflightId` 交給 `relay_execute`。Codex 依 RAG handoff 產生新版後，呼叫 `relay_submit_result`，Relay 會保留舊紀錄並建立新版。
 
 ### Scene 4 — 貼回共同聊天
 
