@@ -83,7 +83,7 @@ export async function relayPreflight(input: {
   recordId?: string | null;
 }) {
   await ensureWorkspace();
-  const operation = input.operation === "generate_with_team_knowledge" || input.operation === "rag_refresh" || input.operation === "refresh" ? input.operation : "auto";
+  const operation = input.operation === "preview" || input.operation === "generate_with_team_knowledge" || input.operation === "force_full_generation" || input.operation === "rag_refresh" || input.operation === "refresh" ? input.operation : "auto";
   let question = validateQuestion(input.question);
   let target: MemoryRow | null = null;
   if (operation === "refresh" || operation === "rag_refresh") {
@@ -105,9 +105,48 @@ export async function relayPreflight(input: {
     estimate: result.estimate,
     route: result.plan.route,
     question,
-    match: result.plan.route === "full_generation" && operation !== "refresh" ? null : match,
+    // Always expose the best candidate and all three scores for MCP route
+    // preview, including when Full Generation is recommended.
+    match,
     thresholds: routeThresholds(),
     retrieval: result.plan.retrieval,
+  };
+}
+
+export async function relayConfirmRoute(input: {
+  actor: string;
+  previewId: string;
+  question: unknown;
+  selectedRoute: "rag" | "full_generation";
+}) {
+  await ensureWorkspace();
+  const question = validateQuestion(input.question);
+  const preview = await runtimeEnv().DB.prepare("SELECT * FROM token_estimates WHERE id = ? AND workspace_id = ?")
+    .bind(input.previewId, workspaceId())
+    .first<TokenEstimateRow>();
+  if (!preview || preview.operation !== "preview") throw new ApiError("A valid route preview is required.", 409, "route_preview_required");
+  if (preview.actor !== input.actor) throw new ApiError("This route preview belongs to another member.", 403, "estimate_actor_mismatch");
+  if (preview.question_fingerprint !== await questionFingerprint(question)) throw new ApiError("The question changed after route preview.", 409, "estimate_prompt_changed");
+  if (preview.claimed_at || preview.consumed_at) throw new ApiError("This route preview was already confirmed.", 409, "route_preview_consumed");
+  if (new Date(preview.expires_at).getTime() <= Date.now()) throw new ApiError("This route preview expired. Run relay_preflight again.", 409, "estimate_expired");
+  await claimTokenEstimate(preview.id);
+  await consumeTokenEstimate({
+    estimateId: preview.id,
+    actualInputTokens: 0,
+    actualOutputTokens: 0,
+    actualTotalTokens: 0,
+    actualCachedTokens: 0,
+    actualRetrievalInputTokens: preview.retrieval_input_tokens,
+  });
+  const confirmed = await relayPreflight({
+    actor: input.actor,
+    question,
+    operation: input.selectedRoute === "rag" ? "generate_with_team_knowledge" : "force_full_generation",
+  });
+  return {
+    status: "route_confirmed" as const,
+    selectedRoute: input.selectedRoute,
+    ...confirmed,
   };
 }
 
@@ -280,6 +319,7 @@ export async function relayCreateAgentHandoff(input: {
     .bind(input.estimateId, workspaceId())
     .first<TokenEstimateRow>();
   if (!estimate) throw new ApiError("Preflight not found. Run relay_preflight first.", 409, "estimate_not_found");
+  if (estimate.operation === "preview") throw new ApiError("Display all similarity scores and ask the member to choose RAG or Full Generation before executing.", 409, "route_confirmation_required");
   const operation = input.operation === "generate_with_team_knowledge" || input.operation === "rag_refresh" || input.operation === "refresh" ? input.operation : estimate.operation;
   const refreshRecord = operation === "refresh" ? await refreshTarget(input.recordId ?? estimate.record_id ?? "") : null;
   if (refreshRecord) question = refreshRecord.title;
