@@ -199,6 +199,29 @@ test("dashboard and MCP expose the configured workspace identity", async () => {
   assert.match(envExample, /RELAY_WORKSPACE_NAME=RoamTogether Development/);
 });
 
+test("dashboard presence is recent-only and shared knowledge is generated-only", async () => {
+  const [workspace, page, envExample, readme] = await Promise.all([
+    read("../app/api/_lib/workspace.ts"),
+    read("../app/page.tsx"),
+    read("../.env.example"),
+    read("../README.md"),
+  ]);
+
+  assert.match(workspace, /agentOnlineWindowSeconds/);
+  assert.match(workspace, /created_at >= \?/);
+  assert.match(workspace, /RELAY_AGENT_ONLINE_WINDOW_SECONDS/);
+  assert.match(workspace, /routing_events\.record_id = memory_records\.id/);
+  assert.match(workspace, /routing_events\.route IN \('rag', 'full_generation'\)/);
+  assert.match(workspace, /routing_events\.action IN \('agent_result', 'generate', 'refresh'\)/);
+  assert.doesNotMatch(page, /const agents =/);
+  assert.match(page, /No agents active in the last/);
+  assert.match(page, /window\.setInterval\(loadWorkspace, 10000\)/);
+  assert.match(page, /Responses saved after RAG or Full Generation/);
+  assert.doesNotMatch(page, /Everything your team and their agents have contributed/);
+  assert.match(envExample, /RELAY_AGENT_ONLINE_WINDOW_SECONDS=120/);
+  assert.match(readme, /Shared Knowledge view is intentionally curated/);
+});
+
 test("demo guide includes beginner Codex MCP setup and verification", async () => {
   const [guide, installer, launcher] = await Promise.all([
     read("../DEMO_GUIDE.md"),

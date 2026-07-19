@@ -26,6 +26,7 @@ type RuntimeEnv = {
   RELAY_ALLOW_LOCAL_ANONYMOUS?: string;
   RELAY_MCP_JOIN_MODE?: string;
   RELAY_MCP_ACCESS_TOKENS?: string;
+  RELAY_AGENT_ONLINE_WINDOW_SECONDS?: string;
 };
 
 export type MemoryRow = {
@@ -128,6 +129,10 @@ export function appMode() {
 
 export function mcpJoinMode() {
   return runtimeEnv().RELAY_MCP_JOIN_MODE?.trim() === "workspace_id" ? "workspace_id" : "bearer_token";
+}
+
+export function agentOnlineWindowSeconds() {
+  return Math.max(30, numberSetting(runtimeEnv().RELAY_AGENT_ONLINE_WINDOW_SECONDS, 120));
 }
 
 export function tokenLimits() {
@@ -482,8 +487,20 @@ export async function getWorkspaceState() {
   const { DB, OPENAI_API_KEY } = runtimeEnv();
   const id = workspaceId();
   const name = workspaceName();
+  const onlineWindowSeconds = agentOnlineWindowSeconds();
+  const onlineCutoff = new Date(Date.now() - onlineWindowSeconds * 1000).toISOString();
   const [records, files, reuse, model, cacheState, routes, estimated, preflights, mcpMembers, mcpEvents] = await Promise.all([
-    DB.prepare("SELECT * FROM memory_records WHERE workspace_id = ? ORDER BY created_at DESC LIMIT 80").bind(id).all<MemoryRow>(),
+    DB.prepare(`SELECT memory_records.* FROM memory_records
+      WHERE memory_records.workspace_id = ?
+        AND memory_records.kind = 'answer'
+        AND EXISTS (
+          SELECT 1 FROM routing_events
+          WHERE routing_events.workspace_id = memory_records.workspace_id
+            AND routing_events.record_id = memory_records.id
+            AND routing_events.route IN ('rag', 'full_generation')
+            AND routing_events.action IN ('agent_result', 'generate', 'refresh')
+        )
+      ORDER BY memory_records.created_at DESC LIMIT 80`).bind(id).all<MemoryRow>(),
     DB.prepare("SELECT * FROM workspace_files WHERE workspace_id = ? ORDER BY created_at DESC LIMIT 30").bind(id).all<FileRow>(),
     DB.prepare("SELECT COUNT(*) AS duplicates FROM reuse_events WHERE workspace_id = ?").bind(id).first<{ duplicates: number }>(),
     DB.prepare("SELECT COUNT(*) AS calls, COALESCE(SUM(cached_tokens), 0) AS cached_tokens, COALESCE(SUM(cache_write_tokens), 0) AS cache_write_tokens FROM model_calls WHERE workspace_id = ?").bind(id).first<{ calls: number; cached_tokens: number; cache_write_tokens: number }>(),
@@ -491,7 +508,7 @@ export async function getWorkspaceState() {
     DB.prepare("SELECT route, COUNT(*) AS count FROM routing_events WHERE workspace_id = ? GROUP BY route").bind(id).all<{ route: DefenseRoute; count: number }>(),
     DB.prepare("SELECT COALESCE(SUM(estimated_tokens_saved), 0) AS saved FROM routing_events WHERE workspace_id = ?").bind(id).first<{ saved: number }>(),
     DB.prepare("SELECT COUNT(*) AS count FROM token_estimates WHERE workspace_id = ?").bind(id).first<{ count: number }>(),
-    DB.prepare("SELECT actor, client_name, MAX(created_at) AS last_seen, COUNT(*) AS calls FROM mcp_events WHERE workspace_id = ? GROUP BY actor, client_name ORDER BY last_seen DESC LIMIT 20").bind(id).all<{ actor: string; client_name: string; last_seen: string; calls: number }>(),
+    DB.prepare("SELECT actor, client_name, MAX(created_at) AS last_seen, COUNT(*) AS calls FROM mcp_events WHERE workspace_id = ? AND created_at >= ? GROUP BY actor, client_name ORDER BY last_seen DESC LIMIT 20").bind(id, onlineCutoff).all<{ actor: string; client_name: string; last_seen: string; calls: number }>(),
     DB.prepare("SELECT actor, client_name, method, tool_name, success, route, created_at FROM mcp_events WHERE workspace_id = ? ORDER BY created_at DESC LIMIT 30").bind(id).all<{ actor: string; client_name: string; method: string; tool_name: string | null; success: number; route: DefenseRoute | null; created_at: string }>(),
   ]);
   const routeCounts = { semanticCache: 0, rag: 0, fullGeneration: 0 };
@@ -522,7 +539,8 @@ export async function getWorkspaceState() {
       return { ready: status.ready, provider: status.provider, model: status.model, dimensions: status.dimensions };
     })(),
     mcp: {
-      enabled: configuredMcpTokens().size > 0 || runtimeEnv().RELAY_ALLOW_LOCAL_ANONYMOUS === "true",
+      enabled: mcpJoinMode() === "workspace_id" || configuredMcpTokens().size > 0 || runtimeEnv().RELAY_ALLOW_LOCAL_ANONYMOUS === "true",
+      onlineWindowSeconds,
       members: mcpMembers.results.map((member) => ({ actor: member.actor, clientName: member.client_name, lastSeen: member.last_seen, calls: member.calls })),
       events: mcpEvents.results.map((event) => ({ actor: event.actor, clientName: event.client_name, method: event.method, toolName: event.tool_name, success: Boolean(event.success), route: event.route, createdAt: event.created_at })),
     },

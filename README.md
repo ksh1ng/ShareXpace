@@ -40,7 +40,9 @@ The stateless Streamable HTTP-compatible endpoint is `https://<relay-host>/api/m
 - `relay_post_update` — return agent progress or results to the shared chat without an LLM call.
 - `relay_get_workspace` — read route, savings, memory and MCP activity state.
 
-Resources are available at `relay://workspace/<workspace-id>/{summary,memory,activity,savings}`. The Hackathon Demo uses `RELAY_MCP_JOIN_MODE=workspace_id`: clients append the Workspace ID and an optional display label to the MCP URL, for example `/api/mcp?workspace_id=relay-production&member=Alice`. The Sites dispatch access mode must be `public` so non-browser MCP clients reach the Worker instead of receiving the Sign in with ChatGPT HTML page. The root layout still requires ChatGPT sign-in for the Dashboard, and browser data/write routes enforce authenticated-user headers. MCP calls are recorded in `mcp_events`, and the Dashboard shows member labels, clients and audited calls.
+Resources are available at `relay://workspace/<workspace-id>/{summary,memory,activity,savings}`. The Hackathon Demo uses `RELAY_MCP_JOIN_MODE=workspace_id`: clients append the Workspace ID and an optional display label to the MCP URL, for example `/api/mcp?workspace_id=relay-production&member=Alice`. The Sites dispatch access mode must be `public` so non-browser MCP clients reach the Worker instead of receiving the Sign in with ChatGPT HTML page. The root layout still requires ChatGPT sign-in for the Dashboard, and browser data/write routes enforce authenticated-user headers. MCP calls are recorded in `mcp_events`. Because Streamable HTTP is stateless, the Dashboard defines a connected agent as an actor/client pair with MCP activity inside `RELAY_AGENT_ONLINE_WINDOW_SECONDS` and refreshes that view every ten seconds.
+
+The Dashboard's Shared Knowledge view is intentionally curated: it only includes persisted answers whose routing event proves they were produced through RAG or Full Generation. Semantic Cache reuse, chat, uploads, source records, handoff events, and seeds do not appear as generated team knowledge.
 
 ## Token lifecycle
 
@@ -116,6 +118,7 @@ Apply every SQL file in `drizzle/` to the production D1 database before serving 
 | `RELAY_ALLOW_LOCAL_ANONYMOUS` | local only | Explicitly permits a local anonymous actor |
 | `RELAY_MCP_JOIN_MODE` | yes | `workspace_id` for the Hackathon Demo; use `bearer_token` for stricter deployments |
 | `RELAY_MCP_ACCESS_TOKENS` | bearer mode only | Optional secret JSON map of bearer tokens to workspace member names |
+| `RELAY_AGENT_ONLINE_WINDOW_SECONDS` | no | Recent MCP activity window used for Connected Agents; minimum `30`, default `120` |
 
 Bindings are declared in `.openai/hosting.json`: D1 as `DB` and R2 as `FILES`. Hosted access is private by default through Sites authentication.
 
