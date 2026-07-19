@@ -44,6 +44,8 @@ Resources are available at `relay://workspace/<workspace-id>/{summary,memory,act
 
 The Dashboard's Shared Knowledge view is intentionally curated: it only includes persisted answers whose routing event proves they were produced through RAG or Full Generation. Semantic Cache reuse, chat, uploads, source records, handoff events, and seeds do not appear as generated team knowledge.
 
+Authenticated Dashboard users can choose **Reset knowledge** and confirm both the current Workspace ID and `RESET SHARED KNOWLEDGE`. The server deletes all Workspace memory records, cached record embeddings, exact-answer cache entries, uploaded source objects/metadata, and pending token estimates, then increments the knowledge version so provider prompt-cache namespaces cannot reuse the deleted context. Shared chat and historical routing/model/MCP analytics are retained.
+
 ## Token lifecycle
 
 Every agent action is a two-step transaction:

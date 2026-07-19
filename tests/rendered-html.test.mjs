@@ -222,6 +222,29 @@ test("dashboard presence is recent-only and shared knowledge is generated-only",
   assert.match(readme, /Shared Knowledge view is intentionally curated/);
 });
 
+test("shared knowledge reset is authenticated, confirmed, and clears vector state", async () => {
+  const [page, route, readme] = await Promise.all([
+    read("../app/page.tsx"),
+    read("../app/api/knowledge/reset/route.ts"),
+    read("../README.md"),
+  ]);
+
+  assert.match(page, /Reset knowledge/);
+  assert.match(page, /RESET SHARED KNOWLEDGE/);
+  assert.match(page, /\/api\/knowledge\/reset/);
+  assert.match(page, /resetWorkspaceId !== workspace\.id/);
+  assert.match(route, /requireActor\(request\)/);
+  assert.match(route, /body\.workspaceId !== workspaceId\(\)/);
+  assert.match(route, /body\.confirmation !== RESET_PHRASE/);
+  assert.match(route, /DELETE FROM record_embeddings/);
+  assert.match(route, /DELETE FROM answer_cache/);
+  assert.match(route, /DELETE FROM memory_records/);
+  assert.match(route, /DELETE FROM workspace_files/);
+  assert.match(route, /FILES\.delete/);
+  assert.match(route, /bumpKnowledgeVersion/);
+  assert.match(readme, /Authenticated Dashboard users can choose \*\*Reset knowledge\*\*/);
+});
+
 test("demo guide includes beginner Codex MCP setup and verification", async () => {
   const [guide, installer, launcher] = await Promise.all([
     read("../DEMO_GUIDE.md"),

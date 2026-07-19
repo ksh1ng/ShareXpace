@@ -16,6 +16,7 @@
 - Refresh 會建立新版本並保留、supersede 舊版本。
 - Dashboard 的 **CONNECTED AGENTS** 只顯示最近 120 秒有 MCP 活動的 Agent，並約每 10 秒更新；停止使用後會自動離線。
 - **Shared knowledge** 只顯示已完成並保存的 RAG／Full Generation 回答。Semantic Cache 重用、聊天訊息、上傳來源與尚未完成的 handoff 不會混入。
+- 需要重新錄 Demo 時，可在 **Shared knowledge → Reset knowledge** 輸入畫面顯示的 Workspace ID，再輸入 `RESET SHARED KNOWLEDGE`。系統會清除共享知識、embedding vectors、Semantic Cache 與上傳來源，但保留共同聊天及效能統計。
 
 目前尚未提供使用者自行建立／加入多個 Workspace；`RELAY_WORKSPACE_ID` 決定這次部署使用的固定 Workspace。上傳到 R2 的檔案目前只保存 bytes 與 metadata，尚未自動解析及建立文件 chunks。
 

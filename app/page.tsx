@@ -161,6 +161,10 @@ export default function Home() {
   const [mcp, setMcp] = useState<McpStatus>({ enabled: false, onlineWindowSeconds: 120, members: [], events: [] });
   const [embedding, setEmbedding] = useState<EmbeddingStatus>({ ready: false, provider: "lexical", model: null, dimensions: 0 });
   const [workspace, setWorkspace] = useState<WorkspaceInfo>({ id: "", name: "Loading workspace…" });
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetWorkspaceId, setResetWorkspaceId] = useState("");
+  const [resetPhrase, setResetPhrase] = useState("");
+  const [resettingKnowledge, setResettingKnowledge] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -424,6 +428,44 @@ export default function Home() {
     }
   }
 
+  function closeKnowledgeReset() {
+    if (resettingKnowledge) return;
+    setResetOpen(false);
+    setResetWorkspaceId("");
+    setResetPhrase("");
+  }
+
+  async function resetSharedKnowledge() {
+    if (resetWorkspaceId !== workspace.id || resetPhrase !== "RESET SHARED KNOWLEDGE") return;
+    setResettingKnowledge(true);
+    setError("");
+    try {
+      const response = await fetch("/api/knowledge/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workspaceId: resetWorkspaceId, confirmation: resetPhrase }),
+      });
+      const data = await response.json() as { deleted?: { sharedKnowledge: number; embeddings: number; uploadedFiles: number }; knowledgeVersion?: number; error?: string };
+      if (!response.ok) throw new Error(data.error || "Shared knowledge could not be reset.");
+      setMemory([]);
+      setMatch(null);
+      setPreflight(null);
+      setAnswer(null);
+      setReused(false);
+      setLastUsage(null);
+      setPromptCache((current) => ({ ...current, knowledgeVersion: data.knowledgeVersion ?? current.knowledgeVersion + 1 }));
+      setResetOpen(false);
+      setResetWorkspaceId("");
+      setResetPhrase("");
+      setToast(`Reset complete: ${data.deleted?.sharedKnowledge ?? 0} knowledge records and ${data.deleted?.embeddings ?? 0} embeddings deleted`);
+      window.setTimeout(() => setToast(""), 4200);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Shared knowledge could not be reset.");
+    } finally {
+      setResettingKnowledge(false);
+    }
+  }
+
   return (
     <main className="app-shell">
       <aside className="sidebar">
@@ -639,7 +681,7 @@ export default function Home() {
           </section>
 
           <section className="knowledge-section">
-            <div className="section-heading"><div><h2>Shared knowledge</h2><p>Responses saved after RAG or Full Generation. Cache reuses, chat messages and uploaded sources stay out of this view.</p></div><button className="upload-button" onClick={() => fileInput.current?.click()} disabled={searching} type="button">↑ Upload source</button></div>
+            <div className="section-heading"><div><h2>Shared knowledge</h2><p>Responses saved after RAG or Full Generation. Cache reuses, chat messages and uploaded sources stay out of this view.</p></div><div className="knowledge-actions"><button className="reset-knowledge-button" onClick={() => setResetOpen(true)} disabled={searching || resettingKnowledge} type="button">Reset knowledge</button><button className="upload-button" onClick={() => fileInput.current?.click()} disabled={searching || resettingKnowledge} type="button">↑ Upload source</button></div></div>
             <input ref={fileInput} className="visually-hidden" type="file" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadFile(file); }} />
             <div className="filter-row">
               <button className="active" type="button">Generated responses<span>{memory.length}</span></button>
@@ -660,6 +702,20 @@ export default function Home() {
           </section>
         </div>
       </section>
+      {resetOpen && (
+        <div className="reset-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeKnowledgeReset(); }}>
+          <section className="reset-modal" role="dialog" aria-modal="true" aria-labelledby="reset-knowledge-title">
+            <header><span className="reset-warning">!</span><div><p>DESTRUCTIVE WORKSPACE ACTION</p><h2 id="reset-knowledge-title">Reset shared knowledge?</h2></div></header>
+            <p>This permanently deletes generated answers, uploaded workspace sources, Semantic Cache entries and all saved embedding vectors. Shared chat and analytics history are retained.</p>
+            <div className="reset-scope"><span>Will delete</span><b>Knowledge records · embeddings · source files · pending preflights</b></div>
+            <label htmlFor="reset-workspace-id">Enter Workspace ID <code>{workspace.id}</code></label>
+            <input id="reset-workspace-id" value={resetWorkspaceId} onChange={(event) => setResetWorkspaceId(event.target.value)} autoComplete="off" placeholder={workspace.id} />
+            <label htmlFor="reset-confirmation">Type <code>RESET SHARED KNOWLEDGE</code></label>
+            <input id="reset-confirmation" value={resetPhrase} onChange={(event) => setResetPhrase(event.target.value)} autoComplete="off" placeholder="RESET SHARED KNOWLEDGE" />
+            <footer><button type="button" onClick={closeKnowledgeReset} disabled={resettingKnowledge}>Cancel</button><button className="confirm-reset-button" type="button" onClick={resetSharedKnowledge} disabled={resettingKnowledge || resetWorkspaceId !== workspace.id || resetPhrase !== "RESET SHARED KNOWLEDGE"}>{resettingKnowledge ? "Resetting…" : "Delete shared knowledge"}</button></footer>
+          </section>
+        </div>
+      )}
       {toast && <div className="toast" role="status"><span>✓</span>{toast}</div>}
     </main>
   );
