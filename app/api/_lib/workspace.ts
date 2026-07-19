@@ -1,10 +1,14 @@
 import { env } from "cloudflare:workers";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { lexicalSimilarity } from "./retrieval-scoring";
 
 export type KnowledgeType = "static" | "semi_dynamic" | "dynamic" | "transactional" | "internal_decision";
 export type DefenseRoute = "semantic_cache" | "rag" | "full_generation";
 export type BillingMode = "master" | "personal";
 export type TokenOperation = "auto" | "preview" | "generate_with_team_knowledge" | "force_full_generation" | "rag_refresh" | "refresh";
+export type WorkspaceContext = { id: string; name: string };
+
+const workspaceContext = new AsyncLocalStorage<WorkspaceContext>();
 
 type RuntimeEnv = {
   DB: D1Database;
@@ -116,11 +120,15 @@ function numberSetting(value: string | undefined, fallback: number) {
 }
 
 export function workspaceId() {
-  return runtimeEnv().RELAY_WORKSPACE_ID?.trim() || "relay-production";
+  return workspaceContext.getStore()?.id ?? (runtimeEnv().RELAY_WORKSPACE_ID?.trim() || "RoamTogether");
 }
 
 export function workspaceName() {
-  return runtimeEnv().RELAY_WORKSPACE_NAME?.trim() || "Relay Production";
+  return workspaceContext.getStore()?.name ?? (runtimeEnv().RELAY_WORKSPACE_NAME?.trim() || "RoamTogether");
+}
+
+export function withWorkspaceContext<T>(workspace: WorkspaceContext, operation: () => T | Promise<T>) {
+  return workspaceContext.run(workspace, operation);
 }
 
 export function appMode() {
@@ -224,26 +232,71 @@ async function sameSecret(left: string, right: string) {
 }
 
 export async function requireMcpActor(request: Request) {
+  return (await resolveMcpAccess(request)).actor;
+}
+
+export async function getWorkspace(workspaceIdValue: string) {
+  return runtimeEnv().DB.prepare("SELECT id, name FROM workspaces WHERE id = ?")
+    .bind(workspaceIdValue)
+    .first<WorkspaceContext>();
+}
+
+export async function resolveMcpAccess(request: Request) {
   const sitesActor = actorFrom(request);
-  if (sitesActor) return sitesActor;
+  const url = new URL(request.url);
+  const requestedWorkspaceId = url.searchParams.get("workspace_id")?.trim() || workspaceId();
+  const workspace = await getWorkspace(requestedWorkspaceId);
+  if (!workspace) throw new ApiError("The requested Workspace does not exist.", 403, "workspace_access_denied");
+  if (sitesActor) return { actor: sitesActor, workspace };
   if (mcpJoinMode() === "workspace_id") {
-    const url = new URL(request.url);
     const suppliedWorkspaceId = url.searchParams.get("workspace_id")?.trim() || "";
-    if (!suppliedWorkspaceId || !await sameSecret(workspaceId(), suppliedWorkspaceId)) {
+    if (!suppliedWorkspaceId || !await sameSecret(workspace.id, suppliedWorkspaceId)) {
       throw new ApiError("A valid Workspace ID is required in the MCP URL.", 403, "workspace_access_denied");
     }
     const suppliedMember = url.searchParams.get("member")?.trim() || "";
     const member = suppliedMember.replace(/[^a-zA-Z0-9_. -]/g, "").slice(0, 80).trim();
-    return member || "Workspace Member";
+    return { actor: member || "Workspace Member", workspace };
   }
   const authorization = request.headers.get("authorization") ?? "";
   const supplied = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
   const configured = configuredMcpTokens();
   for (const [token, actor] of configured) {
-    if (supplied && await sameSecret(token, supplied)) return actor.trim();
+    if (supplied && await sameSecret(token, supplied)) return { actor: actor.trim(), workspace };
   }
-  if (runtimeEnv().RELAY_ALLOW_LOCAL_ANONYMOUS === "true") return "Local MCP Developer";
+  if (runtimeEnv().RELAY_ALLOW_LOCAL_ANONYMOUS === "true") return { actor: "Local MCP Developer", workspace };
   throw new ApiError("A valid Relay MCP bearer token is required.", 401, "mcp_authentication_required");
+}
+
+function cleanWorkspaceName(value: unknown) {
+  const name = typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "";
+  if (!name || name.length > 80) throw new ApiError("Workspace name must be between 1 and 80 characters.", 400, "workspace_name_invalid");
+  return name;
+}
+
+function cleanWorkspaceId(value: unknown, name: string) {
+  if (typeof value === "string" && value.trim()) {
+    const id = value.trim();
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(id)) throw new ApiError("Workspace ID may contain only letters, numbers, underscores, and hyphens.", 400, "workspace_id_invalid");
+    return id;
+  }
+  const slug = name.normalize("NFKD").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 56);
+  return slug || `workspace-${crypto.randomUUID().slice(0, 8)}`;
+}
+
+export async function createWorkspace(input: { name: unknown; id?: unknown; actor: string }) {
+  const name = cleanWorkspaceName(input.name);
+  const baseId = cleanWorkspaceId(input.id, name);
+  let id = baseId;
+  if (typeof input.id !== "string" || !input.id.trim()) {
+    for (let attempt = 0; attempt < 5 && await getWorkspace(id); attempt += 1) id = `${baseId.slice(0, 56)}-${crypto.randomUUID().slice(0, 6)}`;
+  }
+  if (await getWorkspace(id)) throw new ApiError("A Workspace with this ID already exists.", 409, "workspace_exists");
+  const createdAt = new Date().toISOString();
+  await runtimeEnv().DB.batch([
+    runtimeEnv().DB.prepare("INSERT INTO workspaces (id, name, created_by, created_at) VALUES (?, ?, ?, ?)").bind(id, name, input.actor, createdAt),
+    runtimeEnv().DB.prepare("INSERT INTO workspace_cache_state (workspace_id, knowledge_version, updated_at) VALUES (?, 1, ?)").bind(id, createdAt),
+  ]);
+  return { id, name, createdBy: input.actor, createdAt, mcpPath: `/api/mcp?workspace_id=${encodeURIComponent(id)}&member=<display-name>` };
 }
 
 export function validateQuestion(value: unknown) {
@@ -276,11 +329,14 @@ export async function ensureWorkspace() {
   const { DB } = runtimeEnv();
   const id = workspaceId();
   try {
+    await DB.prepare("SELECT id FROM workspaces WHERE id = ? LIMIT 1").bind(id).first();
     await DB.prepare("SELECT id FROM memory_records WHERE workspace_id = ? LIMIT 1").bind(id).first();
     await DB.prepare("SELECT claimed_at FROM token_estimates WHERE workspace_id = ? LIMIT 1").bind(id).first();
   } catch {
     throw new ApiError("Database migrations have not been applied.", 503, "database_not_ready");
   }
+  const registered = await getWorkspace(id);
+  if (!registered) throw new ApiError("Workspace not found.", 404, "workspace_not_found");
   await DB.prepare("INSERT OR IGNORE INTO workspace_cache_state (workspace_id, knowledge_version, updated_at) VALUES (?, 1, ?)")
     .bind(id, new Date().toISOString())
     .run();

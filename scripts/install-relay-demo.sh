@@ -4,8 +4,8 @@ set -Eeuo pipefail
 
 RELAY_NAME="${RELAY_MCP_NAME:-relay}"
 RELAY_URL="${RELAY_MCP_URL:-https://relay-production-2026.opompm841218.chatgpt.site/api/mcp}"
-WORKSPACE_NAME="${RELAY_WORKSPACE_NAME:-RoamTogether Development}"
-WORKSPACE_ID="${RELAY_WORKSPACE_ID:-relay-production}"
+WORKSPACE_NAME="${RELAY_WORKSPACE_NAME:-RoamTogether}"
+WORKSPACE_ID="${RELAY_WORKSPACE_ID:-RoamTogether}"
 LAUNCH_CODEX=1
 INSTALL_CODEX=1
 TEMP_INSTALLER=""

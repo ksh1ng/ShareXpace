@@ -26,6 +26,7 @@ interface R2Bucket {
     value: ReadableStream | ArrayBuffer | ArrayBufferView | string | null,
     options?: { httpMetadata?: { contentType?: string } },
   ): Promise<unknown>;
+  delete(key: string | string[]): Promise<void>;
 }
 
 interface Fetcher {
