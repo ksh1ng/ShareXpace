@@ -148,6 +148,10 @@ test("MCP routes cache locally and hands RAG/full work to the host agent", async
   assert.match(mcpRoute, /Raw embedding similarity/);
   assert.match(mcpRoute, /Normalized lexical similarity/);
   assert.match(mcpRoute, /ask whether to use RAG or Full Generation/);
+  assert.match(mcpRoute, /preview\.route === "full_generation" && scores\.every\(\(score\) => score === 0\)/);
+  assert.match(mcpRoute, /autoRouted: true/);
+  assert.match(mcpRoute, /Do not ask the member to choose a route/);
+  assert.match(mcpRoute, /all three displayed similarity scores are 0%/);
   assert.match(mcpRoute, /Relay route confirmed/);
   assert.match(mcpRoute, /Effective route/);
   assert.match(relayService, /route_confirmation_required/);

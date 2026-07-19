@@ -67,7 +67,7 @@ const tools = [
   {
     name: "relay_preflight",
     title: "Check team memory and estimate tokens",
-    description: "First step for every prompt. Displays Hybrid, raw embedding, and normalized lexical similarity. Semantic Cache may proceed to display its answer; otherwise the host must ask the member to choose RAG or Full Generation and wait.",
+    description: "First step for every prompt. Displays Hybrid, raw embedding, and normalized lexical similarity. Semantic Cache proceeds to reuse; a 0/0/0 Full Generation result proceeds automatically; only a nonzero related match asks the member to choose RAG or Full Generation.",
     inputSchema: {
       type: "object",
       properties: {
@@ -255,6 +255,7 @@ function toolMessage(name: string, value: unknown) {
   if (name === "relay_preflight" && value && typeof value === "object" && "route" in value) {
     const preview = value as {
       route?: "semantic_cache" | "rag" | "full_generation";
+      autoRouted?: boolean;
       estimate?: { id?: string };
       match?: { score?: number; semanticScore?: number; lexicalScore?: number; title?: string } | null;
       retrieval?: { embeddingProvider?: string; embeddingModel?: string; embeddingPurpose?: string; embeddingFallbackReason?: string };
@@ -277,6 +278,18 @@ function toolMessage(name: string, value: unknown) {
         `Matched memory: ${match?.title ?? "none"}`,
         "Recommended route: Semantic Cache.",
         "Call relay_execute now to display the cached answer. After displaying it, ask the member to accept it or request a RAG update.",
+      ].join("\n");
+    }
+    if (preview.route === "full_generation" && preview.autoRouted) {
+      return [
+        "## Relay similarity preview",
+        `Workspace ID: ${workspaceId()}`,
+        ...scores,
+        embeddingStatus,
+        `Matched memory: ${match?.title ?? "none"}`,
+        "Recommended route: Full Generation.",
+        "Automatic route: all three displayed similarity scores are 0%, so there is no useful team knowledge for RAG.",
+        `MANDATORY HOST BEHAVIOR: Do not ask the member to choose a route. Call relay_execute now with workspaceId \`${workspaceId()}\`, preflightId \`${preview.estimate?.id ?? ""}\`, and the unchanged question. Use the returned Full Generation handoff, then call relay_submit_result.`,
       ].join("\n");
     }
     return [
@@ -356,7 +369,18 @@ async function callTool(actor: string, name: string, args: Record<string, unknow
   if (name === "relay_create_workspace") return createWorkspace({ actor, name: args.name, id: args.workspaceId });
   if (name === "relay_list_workspaces") return listWorkspaces();
   if (name === "relay_preflight") {
-    return relayPreflight({ actor, question: args.question, operation: "preview" });
+    const preview = await relayPreflight({ actor, question: args.question, operation: "preview" });
+    const scores = [preview.match?.score ?? 0, preview.match?.semanticScore ?? 0, preview.match?.lexicalScore ?? 0];
+    if (preview.route === "full_generation" && scores.every((score) => score === 0)) {
+      const confirmed = await relayConfirmRoute({
+        actor,
+        previewId: preview.estimate.id,
+        question: args.question,
+        selectedRoute: "full_generation",
+      });
+      return { ...confirmed, autoRouted: true };
+    }
+    return preview;
   }
   if (name === "relay_confirm_route") {
     if (args.confirmedByUser !== true) throw new ApiError("Ask the member to choose RAG or Full Generation first.", 409, "user_confirmation_required");
@@ -431,7 +455,7 @@ async function handleRpc(request: Request, actor: string, call: JsonRpcRequest) 
       protocolVersion: PROTOCOL_VERSION,
       capabilities: { tools: { listChanged: false }, resources: { subscribe: false, listChanged: false } },
       serverInfo: { name: "relay-shared-workspace", title: "Relay Shared AI Workspace", version: "0.4.0" },
-      instructions: "This is one shared-workspace MCP server for every Workspace. Never ask the member to add another MCP connection. Use relay_create_workspace to create a Workspace and relay_list_workspaces to find IDs. Pass workspaceId to every workspace tool. For every workspace prompt, call relay_preflight and show Hybrid, raw embedding, and normalized lexical similarity. If Semantic Cache, call relay_execute to display the answer, then ask Accept or RAG update and wait. Otherwise ask RAG or Full Generation and wait; only after the reply call relay_confirm_route, then relay_execute with its new preflight ID. After host generation, call relay_submit_result. Relay never calls the generation model.",
+      instructions: "This is one shared-workspace MCP server for every Workspace. Never ask the member to add another MCP connection. Use relay_create_workspace to create a Workspace and relay_list_workspaces to find IDs. Pass workspaceId to every workspace tool. For every workspace prompt, call relay_preflight and show Hybrid, raw embedding, and normalized lexical similarity. If Semantic Cache, call relay_execute to display the answer, then ask Accept or RAG update and wait. If relay_preflight reports autoRouted Full Generation because all three scores are 0%, do not ask for route choice: call relay_execute immediately, let the host agent generate, then call relay_submit_result. Only a nonzero related match requires asking RAG or Full Generation, waiting, and then calling relay_confirm_route. Relay never calls the generation model.",
     });
   }
   if (call.method === "ping") return result(id, {});
