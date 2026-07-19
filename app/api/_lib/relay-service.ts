@@ -288,6 +288,10 @@ export async function relaySearchMemory(input: { question: unknown; limit?: numb
   const result = await retrieveWorkspaceAnswers(question, key, Math.min(Math.max(input.limit ?? 5, 1), 10));
   return {
     embeddingInputTokens: result.embeddingInputTokens,
+    embeddingProvider: result.embeddingProvider,
+    embeddingModel: result.embeddingModel,
+    embeddingPurpose: result.embeddingPurpose,
+    embeddingFallbackReason: result.embeddingFallbackReason,
     matches: result.matches.map((match) => ({ ...presentMatch(match), route: match.freshness.directReuseAllowed ? "semantic_cache" as DefenseRoute : "rag" as DefenseRoute })),
   };
 }
