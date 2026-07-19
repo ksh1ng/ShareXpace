@@ -83,7 +83,7 @@ fi
 case "$member_name" in *[!a-zA-Z0-9_.-]*|'') fail "Display name may contain only letters, numbers, dots, underscores, and hyphens." ;; esac
 connection_url="${RELAY_URL}?member=${member_name}"
 
-# Remove the credential left by older bearer-token installer versions.
+# Remove the credential left by older authenticated installer versions.
 unset RELAY_MCP_TOKEN 2>/dev/null || true
 if [ "$(uname -s)" = "Darwin" ] && command -v launchctl >/dev/null 2>&1; then
   launchctl unsetenv RELAY_MCP_TOKEN >/dev/null 2>&1 || true

@@ -454,7 +454,9 @@ Recommended route: RAG / Full Generation / Semantic Cache
 
 若 Gemini 請求失敗，這一行會明確顯示 `lexical_fallback` 與錯誤原因；此時 Raw embedding 的 `0%` 代表「未取得 embedding」，不是 Gemini 判定兩句完全不相似。
 
-若為 RAG 或 Full Generation，Codex 接著詢問使用者要走哪一條路，結束當前 turn 並等待。使用者回答後才呼叫：
+若三個分數全部顯示 `0%` 且推薦 Full Generation，Relay 會自動回傳可執行的 Full Generation preflight。Codex 不應詢問路由，應立即呼叫 `relay_execute`、使用自己的模型完成 handoff，再呼叫 `relay_submit_result`。
+
+只有存在非零的相關歷史訊號時，Codex 才詢問使用者要走 RAG 或 Full Generation，結束當前 turn 並等待。使用者回答後才呼叫：
 
 ```text
 relay.relay_confirm_route({
