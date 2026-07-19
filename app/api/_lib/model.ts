@@ -56,6 +56,10 @@ type WorkspacePlan = {
   tools?: Array<Record<string, unknown>>;
   retrieval: {
     mode: string;
+    embeddingProvider?: string;
+    embeddingModel?: string;
+    embeddingPurpose?: string;
+    embeddingFallbackReason?: string;
     sources: Array<{ id: string; title: string; score: number; summary: string | null; sourceUrl: string | null }>;
   };
 };
@@ -138,6 +142,10 @@ async function buildWorkspacePlan(input: {
     tools,
     retrieval: {
       mode: best?.retrievalMode ?? "hybrid",
+      embeddingProvider: retrievalResult.embeddingProvider,
+      embeddingModel: retrievalResult.embeddingModel,
+      embeddingPurpose: retrievalResult.embeddingPurpose,
+      embeddingFallbackReason: retrievalResult.embeddingFallbackReason,
       sources: (route === "rag" ? ragRows : []).map((match) => ({
         id: match.record.id,
         title: match.record.title,

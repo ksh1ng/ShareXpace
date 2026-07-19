@@ -205,6 +205,7 @@ function toolMessage(name: string, value: unknown) {
       route?: "semantic_cache" | "rag" | "full_generation";
       estimate?: { id?: string };
       match?: { score?: number; semanticScore?: number; lexicalScore?: number; title?: string } | null;
+      retrieval?: { embeddingProvider?: string; embeddingModel?: string; embeddingPurpose?: string; embeddingFallbackReason?: string };
     };
     const match = preview.match;
     const scores = [
@@ -212,10 +213,14 @@ function toolMessage(name: string, value: unknown) {
       `Raw embedding similarity: ${match?.semanticScore ?? 0}%`,
       `Normalized lexical similarity: ${match?.lexicalScore ?? 0}%`,
     ];
+    const embeddingStatus = preview.retrieval?.embeddingFallbackReason
+      ? `Embedding provider: ${preview.retrieval.embeddingProvider ?? "lexical_fallback"} — ${preview.retrieval.embeddingFallbackReason}`
+      : `Embedding provider: ${preview.retrieval?.embeddingProvider ?? "unknown"}${preview.retrieval?.embeddingModel ? ` (${preview.retrieval.embeddingModel}, ${preview.retrieval.embeddingPurpose ?? "semantic_similarity"})` : ""}`;
     if (preview.route === "semantic_cache") {
       return [
         "## Relay similarity preview",
         ...scores,
+        embeddingStatus,
         `Matched memory: ${match?.title ?? "none"}`,
         "Recommended route: Semantic Cache.",
         "Call relay_execute now to display the cached answer. After displaying it, ask the member to accept it or request a RAG update.",
@@ -224,6 +229,7 @@ function toolMessage(name: string, value: unknown) {
     return [
       "## Relay similarity preview",
       ...scores,
+      embeddingStatus,
       `Matched memory: ${match?.title ?? "none"}`,
       `Recommended route: ${preview.route === "rag" ? "RAG" : "Full Generation"}.`,
       "MANDATORY HOST BEHAVIOR: Show these three scores to the member, ask whether to use RAG or Full Generation, end this turn, and wait. Do not call relay_execute or any other Relay tool in this turn.",

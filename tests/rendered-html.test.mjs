@@ -166,10 +166,13 @@ test("semantic retrieval supports Gemini with cached vectors and safe fallback",
     read("../README.md"),
   ]);
   assert.match(workspace, /batchEmbedContents/);
-  assert.match(workspace, /RETRIEVAL_QUERY/);
-  assert.match(workspace, /RETRIEVAL_DOCUMENT/);
+  assert.match(workspace, /gemini-embedding-001:semantic-similarity:v2/);
+  assert.match(workspace, /taskType: "SEMANTIC_SIMILARITY"/);
+  assert.match(workspace, /embedContentConfig/);
+  assert.match(workspace, /documents = missing\.map\(\(record\) => record\.title\)/);
   assert.match(workspace, /outputDimensionality: provider\.dimensions/);
   assert.match(workspace, /lexical_fallback/);
+  assert.match(workspace, /embeddingFallbackReason/);
   assert.match(workspace, /model = \? AND dimensions = \?/);
   assert.match(envExample, /GEMINI_API_KEY=/);
   assert.match(envExample, /RELAY_EMBEDDING_PROVIDER=auto/);
