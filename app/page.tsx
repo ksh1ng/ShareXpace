@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type MemoryItem = {
   id: string;
@@ -113,6 +113,7 @@ type ChatMessage = {
 
 type McpStatus = {
   enabled: boolean;
+  onlineWindowSeconds: number;
   members: Array<{ actor: string; clientName: string; lastSeen: string; calls: number }>;
   events: Array<{ actor: string; clientName: string; method: string; toolName: string | null; success: boolean; route: DefenseRoute | null; createdAt: string }>;
 };
@@ -129,10 +130,6 @@ type WorkspaceInfo = {
   name: string;
 };
 
-const agents = [
-  { initials: "YA", name: "Your agent", role: "Workspace collaborator", color: "gold" },
-];
-
 export default function Home() {
   const [activeTab, setActiveTab] = useState("Workspace");
   const [query, setQuery] = useState("");
@@ -142,7 +139,6 @@ export default function Home() {
   const [answer, setAnswer] = useState<MemoryItem | null>(null);
   const [toast, setToast] = useState("");
   const [error, setError] = useState("");
-  const [filter, setFilter] = useState("all");
   const [memory, setMemory] = useState<MemoryItem[]>([]);
   const [duplicates, setDuplicates] = useState(0);
   const [modelReady, setModelReady] = useState(false);
@@ -162,18 +158,20 @@ export default function Home() {
   const [chatBusy, setChatBusy] = useState(false);
   const [chatEstimate, setChatEstimate] = useState<{ question: string; estimate: TokenEstimate } | null>(null);
   const [pendingChatRun, setPendingChatRun] = useState<{ sourceMessageId: string; instruction: string; estimate: TokenEstimate } | null>(null);
-  const [mcp, setMcp] = useState<McpStatus>({ enabled: false, members: [], events: [] });
+  const [mcp, setMcp] = useState<McpStatus>({ enabled: false, onlineWindowSeconds: 120, members: [], events: [] });
   const [embedding, setEmbedding] = useState<EmbeddingStatus>({ ready: false, provider: "lexical", model: null, dimensions: 0 });
   const [workspace, setWorkspace] = useState<WorkspaceInfo>({ id: "", name: "Loading workspace…" });
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    fetch("/api/state")
+    let active = true;
+    const loadWorkspace = () => fetch("/api/state")
       .then(async (response) => {
         if (!response.ok) throw new Error("The shared workspace could not be loaded.");
         return response.json();
       })
       .then((data: { records: MemoryItem[]; stats: { tokensSaved: number; duplicates: number }; promptCache: PromptCache; defense: DefenseStats; modelReady: boolean; mcp: McpStatus; embedding: EmbeddingStatus; workspace: WorkspaceInfo; workspaceId?: string; workspaceName?: string }) => {
+        if (!active) return;
         setMemory(data.records);
         setDuplicates(data.stats.duplicates);
         setPromptCache(data.promptCache);
@@ -186,8 +184,11 @@ export default function Home() {
           name: data.workspaceName ?? "Relay Workspace",
         });
       })
-      .catch((reason: Error) => setError(reason.message))
-      .finally(() => setLoadingWorkspace(false));
+      .catch((reason: Error) => { if (active) setError(reason.message); })
+      .finally(() => { if (active) setLoadingWorkspace(false); });
+    void loadWorkspace();
+    const interval = window.setInterval(loadWorkspace, 10000);
+    return () => { active = false; window.clearInterval(interval); };
   }, []);
 
   useEffect(() => {
@@ -198,11 +199,6 @@ export default function Home() {
     const interval = window.setInterval(load, 5000);
     return () => { active = false; window.clearInterval(interval); };
   }, []);
-
-  const filteredMemory = useMemo(
-    () => memory.filter((item) => filter === "all" || item.kind === filter),
-    [filter, memory],
-  );
 
   async function copyWorkspaceId() {
     if (!workspace.id) return;
@@ -417,9 +413,8 @@ export default function Home() {
       const response = await fetch("/api/files", { method: "POST", body: form });
       const data = await response.json() as { record: MemoryItem; knowledgeVersion: number; error?: string };
       if (!response.ok) throw new Error(data.error || "The file could not be uploaded.");
-      setMemory((items) => [data.record, ...items]);
       setPromptCache((current) => ({ ...current, knowledgeVersion: data.knowledgeVersion }));
-      setToast(`${file.name} added to shared knowledge`);
+      setToast(`${file.name} uploaded to workspace sources`);
       window.setTimeout(() => setToast(""), 2600);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "The file could not be uploaded.");
@@ -461,13 +456,17 @@ export default function Home() {
 
         <div className="sidebar-label">CONNECTED AGENTS</div>
         <div className="agent-list">
-          {[...agents, ...mcp.members.slice(0, 4).map((member) => ({ initials: member.actor.slice(0, 2).toUpperCase(), name: member.actor, role: member.clientName, color: "lime" }))].map((agent, index) => (
-            <button key={`${agent.name}-${index}`} type="button">
-              <span className={`avatar ${agent.color}`}>{agent.initials}</span>
-              <span><b>{agent.name}</b><small>{agent.role}</small></span>
-              <i className="online" />
-            </button>
-          ))}
+          {mcp.members.map((member, index) => {
+            const agent = { initials: member.actor.slice(0, 2).toUpperCase(), name: member.actor, role: member.clientName, color: "lime" };
+            return (
+              <button key={`${agent.name}-${index}`} type="button">
+                <span className={`avatar ${agent.color}`}>{agent.initials}</span>
+                <span><b>{agent.name}</b><small>{agent.role}</small></span>
+                <i className="online" />
+              </button>
+            );
+          })}
+          {mcp.members.length === 0 && <p className="agent-empty">No agents active in the last {mcp.onlineWindowSeconds} seconds.</p>}
         </div>
         <button className="connect-agent" type="button"><span>＋</span> Connect your agent</button>
 
@@ -513,8 +512,8 @@ export default function Home() {
             <div className="gateway-status">
               <header><span className={mcp.enabled ? "online" : ""} /> <b>{mcp.enabled ? "MCP gateway ready" : "MCP token setup required"}</b></header>
               <code>/api/mcp</code>
-              <div><span>Connected identities</span><strong>{mcp.members.length}</strong></div>
-              <div><span>Audited tool calls</span><strong>{mcp.members.reduce((total, member) => total + member.calls, 0)}</strong></div>
+              <div><span>Active agents</span><strong>{mcp.members.length}</strong></div>
+              <div><span>Recent MCP calls</span><strong>{mcp.members.reduce((total, member) => total + member.calls, 0)}</strong></div>
               <div><span>Semantic retrieval</span><strong>{embedding.ready ? `${embedding.provider} · ${embedding.dimensions}d` : "lexical fallback"}</strong></div>
               <small>Every Relay-funded generation requires a short-lived, identity-bound preflight.</small>
             </div>
@@ -640,16 +639,14 @@ export default function Home() {
           </section>
 
           <section className="knowledge-section">
-            <div className="section-heading"><div><h2>Shared knowledge</h2><p>Everything your team and their agents have contributed.</p></div><button className="upload-button" onClick={() => fileInput.current?.click()} disabled={searching} type="button">↑ Upload file</button></div>
+            <div className="section-heading"><div><h2>Shared knowledge</h2><p>Responses saved after RAG or Full Generation. Cache reuses, chat messages and uploaded sources stay out of this view.</p></div><button className="upload-button" onClick={() => fileInput.current?.click()} disabled={searching} type="button">↑ Upload source</button></div>
             <input ref={fileInput} className="visually-hidden" type="file" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadFile(file); }} />
             <div className="filter-row">
-              {[["all", "All"], ["answer", "Answers"], ["source", "Sources"], ["file", "Files"]].map(([value, label]) => (
-                <button key={value} className={filter === value ? "active" : ""} onClick={() => setFilter(value)} type="button">{label}{value === "all" && <span>{memory.length}</span>}</button>
-              ))}
+              <button className="active" type="button">Generated responses<span>{memory.length}</span></button>
               <button className="sort-button" type="button">Newest first⌄</button>
             </div>
             <div className="memory-grid">
-              {filteredMemory.map((item) => (
+              {memory.map((item) => (
                 <article className={`memory-card ${item.stale ? "stale" : ""}`} key={item.id}>
                   <div className="memory-card-top"><span className={`type-icon ${item.accent}`}>{item.kind === "answer" ? "✦" : item.kind === "source" ? "↗" : "▤"}</span><span className={`type-label ${item.kind}`}>{item.kind}</span><span className="knowledge-type">{item.knowledgeType.replaceAll("_", " ")}</span><span className="version-tag">v{item.version}</span>{item.stale && <span className="stale-tag">stale</span>}<button type="button" aria-label="More options">•••</button></div>
                   <h3>{item.title}</h3>
@@ -658,6 +655,7 @@ export default function Home() {
                   <div className="memory-author"><span className={`mini-avatar ${item.accent}`}>{item.author.slice(0, 1)}</span><span><b>{item.author}</b><small>{item.agent}{item.model === "gpt-5.6" ? " · GPT-5.6" : ""}</small></span><time>{item.supersededBy ? "Superseded" : item.time}</time></div>
                 </article>
               ))}
+              {memory.length === 0 && <p className="knowledge-empty">No generated team knowledge yet. Complete a RAG or Full Generation handoff to add the first response.</p>}
             </div>
           </section>
         </div>
