@@ -1,4 +1,4 @@
-import { relayCreateAgentHandoff, relayPreflight, relaySearchMemory, relaySubmitAgentResult } from "../_lib/relay-service";
+import { relayConfirmRoute, relayCreateAgentHandoff, relayPreflight, relaySearchMemory, relaySubmitAgentResult } from "../_lib/relay-service";
 import {
   ApiError,
   getChatMessages,
@@ -35,17 +35,34 @@ const tools = [
   {
     name: "relay_preflight",
     title: "Check team memory and estimate tokens",
-    description: "Required before relay_execute. Searches shared workspace memory, validates TTL and versions, selects Semantic Cache, RAG, or Full Generation, and returns a short-lived preflight ID with planned token usage.",
+    description: "First step for every prompt. Displays Hybrid, raw embedding, and normalized lexical similarity. Semantic Cache may proceed to display its answer; otherwise the host must ask the member to choose RAG or Full Generation and wait.",
     inputSchema: {
       type: "object",
       properties: {
         question: { type: "string", description: "The exact workspace question or task." },
-        operation: { type: "string", enum: ["auto", "generate_with_team_knowledge"], default: "auto", description: "Use auto for normal routing and all duplicate checks. generate_with_team_knowledge forces RAG only for a non-exact related question; a fresh exact duplicate still uses Semantic Cache." },
+        operation: { type: "string", enum: ["auto", "generate_with_team_knowledge"], default: "auto", description: "Accepted for backward compatibility. MCP preflight always performs an automatic route preview before execution." },
       },
       required: ["question"],
       additionalProperties: false,
     },
     annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: false },
+  },
+  {
+    name: "relay_confirm_route",
+    title: "Confirm RAG or Full Generation",
+    description: "Call only in a later turn after displaying all three similarity scores and receiving the member's explicit RAG or Full Generation choice. Returns a new executable preflight ID.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        previewId: { type: "string", description: "Preflight ID returned by relay_preflight." },
+        question: { type: "string", description: "Must exactly match the preview question." },
+        selectedRoute: { type: "string", enum: ["rag", "full_generation"] },
+        confirmedByUser: { type: "boolean", const: true },
+      },
+      required: ["previewId", "question", "selectedRoute", "confirmedByUser"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: false },
   },
   {
     name: "relay_execute",
@@ -183,6 +200,50 @@ function toolResult(value: unknown, message = "Relay request completed.") {
 }
 
 function toolMessage(name: string, value: unknown) {
+  if (name === "relay_preflight" && value && typeof value === "object" && "route" in value) {
+    const preview = value as {
+      route?: "semantic_cache" | "rag" | "full_generation";
+      estimate?: { id?: string };
+      match?: { score?: number; semanticScore?: number; lexicalScore?: number; title?: string } | null;
+    };
+    const match = preview.match;
+    const scores = [
+      `Hybrid similarity: ${match?.score ?? 0}%`,
+      `Raw embedding similarity: ${match?.semanticScore ?? 0}%`,
+      `Normalized lexical similarity: ${match?.lexicalScore ?? 0}%`,
+    ];
+    if (preview.route === "semantic_cache") {
+      return [
+        "## Relay similarity preview",
+        ...scores,
+        `Matched memory: ${match?.title ?? "none"}`,
+        "Recommended route: Semantic Cache.",
+        "Call relay_execute now to display the cached answer. After displaying it, ask the member to accept it or request a RAG update.",
+      ].join("\n");
+    }
+    return [
+      "## Relay similarity preview",
+      ...scores,
+      `Matched memory: ${match?.title ?? "none"}`,
+      `Recommended route: ${preview.route === "rag" ? "RAG" : "Full Generation"}.`,
+      "MANDATORY HOST BEHAVIOR: Show these three scores to the member, ask whether to use RAG or Full Generation, end this turn, and wait. Do not call relay_execute or any other Relay tool in this turn.",
+      `After the member chooses in a later turn, call relay_confirm_route with previewId \`${preview.estimate?.id ?? ""}\`, the unchanged question, selectedRoute, and confirmedByUser=true.`,
+    ].join("\n");
+  }
+  if (name === "relay_confirm_route" && value && typeof value === "object" && "route" in value) {
+    const confirmation = value as {
+      selectedRoute?: "rag" | "full_generation";
+      route?: "semantic_cache" | "rag" | "full_generation";
+      estimate?: { id?: string };
+    };
+    return [
+      "## Relay route confirmed",
+      `Member selected: ${confirmation.selectedRoute ?? "unknown"}`,
+      `Effective route: ${confirmation.route ?? "unknown"}`,
+      confirmation.selectedRoute !== confirmation.route ? "Relay adjusted the route because the requested route was not applicable to the latest Workspace memory." : "",
+      `Call relay_execute with preflightId \`${confirmation.estimate?.id ?? ""}\` and the unchanged question.`,
+    ].filter(Boolean).join("\n");
+  }
   if (name !== "relay_execute" || !value || typeof value !== "object" || !("route" in value) || value.route !== "semantic_cache") {
     return `${name} completed through Relay.`;
   }
@@ -225,7 +286,12 @@ async function workspaceResource(uri: string) {
 
 async function callTool(actor: string, name: string, args: Record<string, unknown>) {
   if (name === "relay_preflight") {
-    return relayPreflight({ actor, question: args.question, operation: args.operation === "generate_with_team_knowledge" ? "generate_with_team_knowledge" : "auto" });
+    return relayPreflight({ actor, question: args.question, operation: "preview" });
+  }
+  if (name === "relay_confirm_route") {
+    if (args.confirmedByUser !== true) throw new ApiError("Ask the member to choose RAG or Full Generation first.", 409, "user_confirmation_required");
+    if (typeof args.previewId !== "string" || (args.selectedRoute !== "rag" && args.selectedRoute !== "full_generation")) throw new ApiError("previewId and selectedRoute are required.", 400, "route_confirmation_input_required");
+    return relayConfirmRoute({ actor, previewId: args.previewId, question: args.question, selectedRoute: args.selectedRoute });
   }
   if (name === "relay_execute") {
     if (typeof args.preflightId !== "string") throw new ApiError("preflightId is required.", 400, "estimate_required");
@@ -295,7 +361,7 @@ async function handleRpc(request: Request, actor: string, call: JsonRpcRequest) 
       protocolVersion: PROTOCOL_VERSION,
       capabilities: { tools: { listChanged: false }, resources: { subscribe: false, listChanged: false } },
       serverInfo: { name: "relay-shared-workspace", title: "Relay Shared AI Workspace", version: "0.2.0" },
-      instructions: "For workspace work, always call relay_preflight then relay_execute. On Semantic Cache, display the complete answer, ask whether the member accepts it or wants a RAG update, end the turn, and wait. If accepted, call nothing. Only after an explicit update request in a later turn may you call relay_rag_refresh_preflight with confirmedByUser=true. For RAG or Full Generation, use your own host model with the handoff context, then always call relay_submit_result. Relay never calls the generation model for these routes.",
+      instructions: "For every prompt, call relay_preflight and show Hybrid, raw embedding, and normalized lexical similarity. If Semantic Cache, call relay_execute to display the answer, then ask Accept or RAG update and wait. Otherwise ask RAG or Full Generation and wait; only after the reply call relay_confirm_route, then relay_execute with its new preflight ID. After host generation, call relay_submit_result. Relay never calls the generation model.",
     });
   }
   if (call.method === "ping") return result(id, {});

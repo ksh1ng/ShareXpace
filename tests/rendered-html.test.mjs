@@ -115,7 +115,7 @@ test("MCP routes cache locally and hands RAG/full work to the host agent", async
     read("../app/page.tsx"),
   ]);
 
-  for (const tool of ["relay_preflight", "relay_execute", "relay_submit_result", "relay_search_memory", "relay_rag_refresh_preflight", "relay_refresh", "relay_post_update", "relay_get_workspace"]) {
+  for (const tool of ["relay_preflight", "relay_confirm_route", "relay_execute", "relay_submit_result", "relay_search_memory", "relay_rag_refresh_preflight", "relay_refresh", "relay_post_update", "relay_get_workspace"]) {
     assert.match(mcpRoute, new RegExp(tool));
   }
   assert.match(mcpRoute, /tools\/list/);
@@ -123,6 +123,7 @@ test("MCP routes cache locally and hands RAG/full work to the host agent", async
   assert.match(mcpRoute, /resources\/read/);
   assert.match(mcpRoute, /requireMcpActor/);
   assert.match(relayService, /relayPreflight/);
+  assert.match(relayService, /relayConfirmRoute/);
   assert.match(relayService, /relayExecute/);
   assert.match(relayService, /relayCreateAgentHandoff/);
   assert.match(relayService, /relaySubmitAgentResult/);
@@ -139,6 +140,14 @@ test("MCP routes cache locally and hands RAG/full work to the host agent", async
   assert.match(mcpRoute, /Do not call another Relay tool in this turn/);
   assert.match(mcpRoute, /confirmedByUser/);
   assert.match(mcpRoute, /user_confirmation_required/);
+  assert.match(mcpRoute, /Hybrid similarity/);
+  assert.match(mcpRoute, /Raw embedding similarity/);
+  assert.match(mcpRoute, /Normalized lexical similarity/);
+  assert.match(mcpRoute, /ask whether to use RAG or Full Generation/);
+  assert.match(mcpRoute, /Relay route confirmed/);
+  assert.match(mcpRoute, /Effective route/);
+  assert.match(relayService, /route_confirmation_required/);
+  assert.match(workspace, /force_full_generation/);
   assert.match(workspace, /operation === "rag_refresh"/);
   assert.match(workspace, /keep\n  \/\/ routing local and deterministic|routing local and deterministic/);
   assert.match(workspace, /RELAY_MCP_JOIN_MODE/);

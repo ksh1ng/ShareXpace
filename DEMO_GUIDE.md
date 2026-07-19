@@ -406,6 +406,30 @@ Create a 5-day Tokyo itinerary for us. Prioritize walkable neighborhoods, 1 day 
 
 Relay 接受 Hybrid score 達設定門檻、raw embedding similarity 達 80%，或 normalized lexical similarity 達較保守的 88% 的 fresh match。數字寫法與 `moderate`／`affordable` 也會先做 lexical normalization；上述兩句的 normalized lexical score 約為 91%，因此即使 embedding provider 暫時失敗、分數偏保守，或 Agent 誤帶一般的 `generate_with_team_knowledge`，仍會優先走 Semantic Cache。看完後的刻意更新必須使用 `relay_rag_refresh_preflight`。
 
+### 每次 Prompt 的 Route Preview
+
+`relay_preflight` 後，Codex 必須先顯示：
+
+```text
+Hybrid similarity: …%
+Raw embedding similarity: …%
+Normalized lexical similarity: …%
+Recommended route: RAG / Full Generation / Semantic Cache
+```
+
+若為 RAG 或 Full Generation，Codex 接著詢問使用者要走哪一條路，結束當前 turn 並等待。使用者回答後才呼叫：
+
+```text
+relay.relay_confirm_route({
+  "previewId": "relay_preflight 回傳的 ID",
+  "question": "原始完整問題",
+  "selectedRoute": "rag 或 full_generation",
+  "confirmedByUser": true
+})
+```
+
+再用它回傳的新 preflight ID 呼叫 `relay_execute`。若跳過確認直接執行，Server 會回傳 `route_confirmation_required`。Semantic Cache 則維持原流程：顯示 cached answer 後詢問接受或 RAG 更新。
+
 Alice 或 Bob 再次輸入與 Alice 完全相同的問題：
 
 ```text

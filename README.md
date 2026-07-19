@@ -31,7 +31,8 @@ The Web API and MCP server share routing and freshness rules in `app/api/_lib/re
 
 The stateless Streamable HTTP-compatible endpoint is `https://<relay-host>/api/mcp`. It exposes:
 
-- `relay_preflight` — semantic retrieval, TTL/version validation, route decision and input-token estimate.
+- `relay_preflight` — performs semantic retrieval, TTL/version validation, input-token estimation, and previews every prompt with Hybrid, raw embedding, and normalized lexical similarity.
+- `relay_confirm_route` — records the member's explicit RAG or Full Generation choice and returns a new executable preflight.
 - `relay_execute` — returns a Semantic Cache answer or an `agent_action_required` handoff containing fresh context and host-agent instructions.
 - `relay_submit_result` — stores the answer produced by the MCP host's model in shared memory and shared chat.
 - `relay_search_memory` — read-only shared memory search.
@@ -45,9 +46,9 @@ Resources are available at `relay://workspace/<workspace-id>/{summary,memory,act
 
 Every agent action is a two-step transaction:
 
-1. Preflight selects the defense route. Exact fingerprints are checked first. Semantic retrieval then uses cached D1 document vectors plus one query embedding; without an embedding credential (or during a provider outage) Relay falls back to lexical retrieval. Semantic Cache reports zero main-model input.
+1. MCP preflight previews the route and always shows Hybrid, raw embedding, and normalized lexical similarity. Exact fingerprints are checked first. Semantic retrieval then uses cached D1 document vectors plus one query embedding; without an embedding credential (or during a provider outage) Relay falls back to lexical retrieval. Semantic Cache reports zero main-model input.
    A fresh exact or high-confidence paraphrase always wins over `generate_with_team_knowledge`; that operation can force RAG only for medium-similarity related questions. Deliberate revision after viewing a cached answer uses `relay_rag_refresh_preflight`.
-2. The UI displays exact planned input tokens, the configured output ceiling, and the estimate expiry. Submission must include the short-lived estimate ID.
+2. For RAG/Full Generation, Codex asks the member to choose, ends the turn, and waits. `relay_confirm_route` consumes the preview and creates a route-bound executable preflight. Direct execution of an unconfirmed preview is rejected. The UI also displays exact planned input tokens, the configured output ceiling, and estimate expiry.
 3. The server validates actor, prompt fingerprint, route, operation, matched record, TTL, and single-use state, then atomically claims the handoff.
 4. Semantic Cache finishes immediately and prints the complete stored answer in the MCP response. The host must ask whether the member accepts it or wants a RAG update, end the turn, and wait. Acceptance triggers no tool; only an explicit update reply permits `relay_rag_refresh_preflight` with `confirmedByUser=true`. RAG/Full Generation returns context to the host agent, which generates with its own model and calls `relay_submit_result` to persist the answer and optional host-reported usage. A submitted RAG revision preserves and supersedes the old record.
 

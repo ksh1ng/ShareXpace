@@ -4,7 +4,7 @@ import { lexicalSimilarity } from "./retrieval-scoring";
 export type KnowledgeType = "static" | "semi_dynamic" | "dynamic" | "transactional" | "internal_decision";
 export type DefenseRoute = "semantic_cache" | "rag" | "full_generation";
 export type BillingMode = "master" | "personal";
-export type TokenOperation = "auto" | "generate_with_team_knowledge" | "rag_refresh" | "refresh";
+export type TokenOperation = "auto" | "preview" | "generate_with_team_knowledge" | "force_full_generation" | "rag_refresh" | "refresh";
 
 type RuntimeEnv = {
   DB: D1Database;
@@ -717,6 +717,7 @@ export function classifyDefenseRoute(
   operation: TokenOperation = "auto",
 ): DefenseRoute {
   if (operation === "refresh") return "full_generation";
+  if (operation === "force_full_generation") return "full_generation";
   // This route is only issued after a member has inspected a cached answer and
   // explicitly requested a revised version built from current team knowledge.
   if (operation === "rag_refresh") return "rag";
