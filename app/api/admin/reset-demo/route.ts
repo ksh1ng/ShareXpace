@@ -1,4 +1,4 @@
-import { ensureWorkspace, errorResponse, requireActor, runtimeEnv, workspaceId } from "../../_lib/workspace";
+import { ensureWorkspace, errorResponse, requireMcpActor, runtimeEnv, workspaceId } from "../../_lib/workspace";
 
 const ONE_TIME_CONFIRMATION = "RESET-RELAY-DEMO-2026-07-19-4f7c2a91";
 
@@ -27,7 +27,7 @@ async function counts() {
 
 export async function POST(request: Request) {
   try {
-    const actor = requireActor(request);
+    const actor = await requireMcpActor(request);
     await ensureWorkspace();
     const body = await request.json().catch(() => ({})) as { workspaceId?: string; confirmation?: string };
     if (body.workspaceId !== workspaceId() || body.confirmation !== ONE_TIME_CONFIRMATION) {
