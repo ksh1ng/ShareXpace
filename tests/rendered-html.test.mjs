@@ -106,22 +106,24 @@ test("Tokyo itinerary paraphrase remains eligible for conservative lexical cache
 });
 
 test("MCP routes cache locally and hands RAG/full work to the host agent", async () => {
-  const [mcpRoute, relayService, workspace, schema, migration7, page] = await Promise.all([
+  const [mcpRoute, relayService, workspace, schema, migration7, migration8, page] = await Promise.all([
     read("../app/api/mcp/route.ts"),
     read("../app/api/_lib/relay-service.ts"),
     read("../app/api/_lib/workspace.ts"),
     read("../db/schema.ts"),
     read("../drizzle/0007_mysterious_ironclad.sql"),
+    read("../drizzle/0008_nosy_stranger.sql"),
     read("../app/page.tsx"),
   ]);
 
-  for (const tool of ["relay_preflight", "relay_confirm_route", "relay_execute", "relay_submit_result", "relay_search_memory", "relay_rag_refresh_preflight", "relay_refresh", "relay_post_update", "relay_get_workspace"]) {
+  for (const tool of ["relay_create_workspace", "relay_preflight", "relay_confirm_route", "relay_execute", "relay_submit_result", "relay_search_memory", "relay_rag_refresh_preflight", "relay_refresh", "relay_post_update", "relay_get_workspace"]) {
     assert.match(mcpRoute, new RegExp(tool));
   }
   assert.match(mcpRoute, /tools\/list/);
   assert.match(mcpRoute, /resources\/list/);
   assert.match(mcpRoute, /resources\/read/);
-  assert.match(mcpRoute, /requireMcpActor/);
+  assert.match(mcpRoute, /resolveMcpAccess/);
+  assert.match(mcpRoute, /withWorkspaceContext\(access\.workspace/);
   assert.match(relayService, /relayPreflight/);
   assert.match(relayService, /relayConfirmRoute/);
   assert.match(relayService, /relayExecute/);
@@ -155,6 +157,10 @@ test("MCP routes cache locally and hands RAG/full work to the host agent", async
   assert.match(workspace, /searchParams\.get\("workspace_id"\)/);
   assert.match(schema, /mcpEvents/);
   assert.match(migration7, /CREATE TABLE `mcp_events`/);
+  assert.match(schema, /export const workspaces/);
+  assert.match(migration8, /CREATE TABLE `workspaces`/);
+  assert.match(migration8, /VALUES \('RoamTogether', 'RoamTogether'/);
+  assert.match(migration8, /UPDATE `memory_records` SET `workspace_id` = 'RoamTogether'/);
   assert.match(page, /One workspace gateway for every agent/);
   assert.match(page, /relay_preflight/);
 });
@@ -196,7 +202,11 @@ test("dashboard and MCP expose the configured workspace identity", async () => {
   assert.match(page, /setWorkspace\(data\.workspace/);
   assert.match(page, /Workspace ID copied/);
   assert.match(page, /workspace-id-chip/);
-  assert.match(envExample, /RELAY_WORKSPACE_NAME=RoamTogether Development/);
+  assert.match(envExample, /RELAY_WORKSPACE_ID=RoamTogether/);
+  assert.match(envExample, /RELAY_WORKSPACE_NAME=RoamTogether/);
+  assert.match(workspace, /AsyncLocalStorage<WorkspaceContext>/);
+  assert.match(workspace, /createWorkspace/);
+  assert.match(workspace, /INSERT INTO workspaces/);
 });
 
 test("dashboard presence is recent-only and shared knowledge is generated-only", async () => {
@@ -256,10 +266,10 @@ test("demo guide includes beginner Codex MCP setup and verification", async () =
   assert.match(guide, /Sign in with ChatGPT/);
   assert.match(guide, /INSTALL_RELAY_DEMO\.command/);
   assert.match(guide, /codex mcp add relay/);
-  assert.match(guide, /workspace_id=relay-production/);
+  assert.match(guide, /workspace_id=RoamTogether/);
   assert.doesNotMatch(guide, /--bearer-token-env-var RELAY_MCP_TOKEN/);
   assert.match(guide, /relay_get_workspace/);
-  assert.match(guide, /Workspace ID: relay-production/);
+  assert.match(guide, /Workspace ID: RoamTogether/);
   assert.match(guide, /一般成員不需要設定 `OPENAI_API_KEY`/);
   assert.match(guide, /codex mcp remove relay/);
   assert.match(installer, /https:\/\/chatgpt\.com\/codex\/install\.sh/);

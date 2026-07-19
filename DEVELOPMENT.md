@@ -68,6 +68,8 @@ Every route uses `requireActor()` and `errorResponse()` from `workspace.ts`.
 - `app/api/mcp/route.ts` owns MCP protocol handling, tool/resource descriptors, Workspace-ID join validation, and tool-call audit events.
 - `app/layout.tsx` enforces Dashboard SIWC after the Sites dispatch layer is made public for remote MCP transport. Route handlers under `app/api/mcp` are not wrapped by the page layout; browser APIs retain their own `requireActor` checks.
 - `app/api/_lib/relay-service.ts` is the transport-neutral application layer shared by MCP and Web API routes.
+- `relay_create_workspace` inserts a validated row into `workspaces` plus its initial cache state. It returns the MCP URL path for that D1 partition.
+- `resolveMcpAccess()` resolves the URL's registered Workspace and `withWorkspaceContext()` carries `{id,name}` through concurrent asynchronous MCP execution. Every existing `workspaceId()` consumer therefore remains isolated without mutable global state.
 - `relay_preflight` must precede `relay_execute`; direct execute attempts fail because no matching `token_estimates` authorization record exists.
 - MCP `relay_preflight` is a preview operation. It returns all three similarity scores. For non-Semantic routes, `relay_confirm_route` must consume that preview after explicit user choice and create the executable RAG or Full Generation preflight; an unconfirmed preview cannot execute.
 - Raw embedding similarity is prompt-to-prompt: Gemini embeds both questions with `SEMANTIC_SIMILARITY` and stores question-title vectors under a purpose-versioned cache key. The preview exposes provider, model, purpose, and sanitized fallback reason; lexical fallback never masquerades as a Gemini 0% result.
@@ -77,7 +79,7 @@ Every route uses `requireActor()` and `errorResponse()` from `workspace.ts`.
 - Connected Agents is presence derived from `mcp_events`, not a permanent member directory. `getWorkspaceState()` only groups actor/client activity newer than the configured online cutoff (120 seconds by default), and the Dashboard polls `/api/state` every ten seconds.
 - Shared Knowledge is a generated-response projection. Its query requires an `answer` record with a linked `routing_events` row on `rag` or `full_generation` and a completed generation action (`agent_result`, `generate`, or `refresh`). Cache reuse, source/file records, chat, and incomplete handoffs are excluded.
 - `POST /api/knowledge/reset` is a signed-in Dashboard operation. It requires the exact Workspace ID and `RESET SHARED KNOWLEDGE`, deletes knowledge/embedding/cache/source data in a D1 batch, removes R2 source objects, invalidates pending estimates, and increments the knowledge version. Chat and analytics history are deliberately retained.
-- `RELAY_MCP_JOIN_MODE=workspace_id` enables the low-friction Hackathon Demo join flow. The `workspace_id` query value must match `RELAY_WORKSPACE_ID`; the optional `member` value is only an audit label, not verified identity. For a real production deployment, switch to `bearer_token` and configure independent `RELAY_MCP_ACCESS_TOKENS` values.
+- `RELAY_MCP_JOIN_MODE=workspace_id` enables the low-friction Hackathon Demo join flow. The `workspace_id` query value must identify a row in `workspaces`; the optional `member` value is only an audit label, not verified identity. For a real production deployment, switch to `bearer_token` and add Workspace membership/RBAC.
 - MCP cannot control how a third-party host performs its internal inference. Relay controls shared-memory access and requires the result-submission lifecycle before host output becomes reusable team knowledge.
 
 ### Shared domain layer
@@ -143,17 +145,17 @@ The five knowledge types are `static`, `semi_dynamic`, `dynamic`, `transactional
 - `mcp_events`: MCP member/client activity, tool success and selected route.
 - `workspace_files` plus R2 `FILES`: uploaded object metadata and bytes.
 
-Request handlers call `ensureWorkspace()` only to verify required tables and initialize the cache-version row. They never create schema or insert demo content.
+Request handlers call `ensureWorkspace()` to verify required tables and the selected registry row. Schema is migration-only; only the explicit `relay_create_workspace` tool creates Workspace registry/cache rows.
 
 ## Security and operations
 
 - Hosted identity comes from Sites-managed headers. Do not accept actor names from request JSON.
 - Personal keys are request-scoped; never log or persist them.
-- Use distinct D1/R2 resources and `RELAY_WORKSPACE_ID` per environment.
+- Use distinct D1/R2 resources per environment. Within one deployment, `workspaces.id` partitions every shared record and R2 object prefix.
 - Configure the workspace master key as a secret, not a plain repository variable.
 - Apply migrations before deploying application code that expects them.
 - Monitor 409 estimate errors, OpenAI 429/5xx rates, route distribution, and estimate-vs-actual deltas.
-- Add rate limiting and organization membership/RBAC before opening a public multi-tenant deployment; the current Sites deployment is private and single-workspace.
+- Add rate limiting and organization membership/RBAC before treating Workspace IDs as a production authorization boundary; this Hackathon join mode prioritizes low-friction multi-Workspace demos.
 
 ## Safe change checklist
 

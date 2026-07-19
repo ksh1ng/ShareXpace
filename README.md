@@ -31,6 +31,7 @@ The Web API and MCP server share routing and freshness rules in `app/api/_lib/re
 
 The stateless Streamable HTTP-compatible endpoint is `https://<relay-host>/api/mcp`. It exposes:
 
+- `relay_create_workspace` — creates a new isolated Workspace registry/cache partition and returns the MCP URL path agents use to join it.
 - `relay_preflight` — performs semantic retrieval, TTL/version validation, input-token estimation, and previews every prompt with Hybrid, raw embedding, and normalized lexical similarity.
 - `relay_confirm_route` — records the member's explicit RAG or Full Generation choice and returns a new executable preflight.
 - `relay_execute` — returns a Semantic Cache answer or an `agent_action_required` handoff containing fresh context and host-agent instructions.
@@ -40,7 +41,9 @@ The stateless Streamable HTTP-compatible endpoint is `https://<relay-host>/api/m
 - `relay_post_update` — return agent progress or results to the shared chat without an LLM call.
 - `relay_get_workspace` — read route, savings, memory and MCP activity state.
 
-Resources are available at `relay://workspace/<workspace-id>/{summary,memory,activity,savings}`. The Hackathon Demo uses `RELAY_MCP_JOIN_MODE=workspace_id`: clients append the Workspace ID and an optional display label to the MCP URL, for example `/api/mcp?workspace_id=relay-production&member=Alice`. The Sites dispatch access mode must be `public` so non-browser MCP clients reach the Worker instead of receiving the Sign in with ChatGPT HTML page. The root layout still requires ChatGPT sign-in for the Dashboard, and browser data/write routes enforce authenticated-user headers. MCP calls are recorded in `mcp_events`. Because Streamable HTTP is stateless, the Dashboard defines a connected agent as an actor/client pair with MCP activity inside `RELAY_AGENT_ONLINE_WINDOW_SECONDS` and refreshes that view every ten seconds.
+Resources are available at `relay://workspace/<workspace-id>/{summary,memory,activity,savings}`. `RoamTogether` is the default Workspace name and ID. The Hackathon Demo uses `RELAY_MCP_JOIN_MODE=workspace_id`: clients append any registered Workspace ID and an optional display label to the MCP URL, for example `/api/mcp?workspace_id=RoamTogether&member=Alice`. The Sites dispatch access mode must be `public` so non-browser MCP clients reach the Worker instead of receiving the Sign in with ChatGPT HTML page. The root layout still requires ChatGPT sign-in for the Dashboard, and browser data/write routes enforce authenticated-user headers. MCP calls are recorded in `mcp_events`. Because Streamable HTTP is stateless, the Dashboard defines a connected agent as an actor/client pair with MCP activity inside `RELAY_AGENT_ONLINE_WINDOW_SECONDS` and refreshes that view every ten seconds.
+
+Workspace selection is request-scoped with `AsyncLocalStorage`: the MCP URL resolves a row from the D1 `workspaces` registry, and every downstream memory, embedding, cache, chat and analytics query uses that Workspace ID. This prevents concurrent MCP requests for different Workspaces from leaking state. Any connected agent may call `relay_create_workspace({ name, workspaceId? })`; it returns a new MCP path that can be registered as another Codex MCP connection.
 
 The Dashboard's Shared Knowledge view is intentionally curated: it only includes persisted answers whose routing event proves they were produced through RAG or Full Generation. Semantic Cache reuse, chat, uploads, source records, handoff events, and seeds do not appear as generated team knowledge.
 
@@ -107,8 +110,8 @@ Apply every SQL file in `drizzle/` to the production D1 database before serving 
 | `RELAY_EMBEDDING_PROVIDER` | no | `auto` (default) prefers Gemini, then OpenAI, then lexical; also accepts `gemini`, `openai`, or `lexical` |
 | `OPENAI_API_KEY` | optional | Enables exact OpenAI input counting and provides an embedding fallback; MCP generation remains in the host agent |
 | `RELAY_APP_MODE` | yes | Set to `production` |
-| `RELAY_WORKSPACE_ID` | yes | Stable D1 partition and prompt-cache namespace |
-| `RELAY_WORKSPACE_NAME` | yes | Human-readable workspace name shown by the Dashboard and MCP workspace status |
+| `RELAY_WORKSPACE_ID` | yes | Default Dashboard Workspace; production default is `RoamTogether` |
+| `RELAY_WORKSPACE_NAME` | yes | Default Dashboard Workspace name; production value is `RoamTogether` |
 | `RELAY_SEMANTIC_CACHE_THRESHOLD` | no | High-similarity direct reuse threshold; default `0.78` |
 | `RELAY_SEMANTIC_EMBEDDING_THRESHOLD` | no | Raw embedding similarity that independently permits fresh direct reuse; default `0.80` |
 | `RELAY_LEXICAL_CACHE_THRESHOLD` | no | Conservative normalized lexical score that independently permits fresh direct reuse; default `0.88` |

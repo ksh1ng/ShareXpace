@@ -1,12 +1,14 @@
 import { relayConfirmRoute, relayCreateAgentHandoff, relayPreflight, relaySearchMemory, relaySubmitAgentResult } from "../_lib/relay-service";
 import {
   ApiError,
+  createWorkspace,
   getChatMessages,
   getWorkspaceState,
   recordMcpEvent,
-  requireMcpActor,
+  resolveMcpAccess,
   runtimeEnv,
   workspaceId,
+  withWorkspaceContext,
 } from "../_lib/workspace";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +34,21 @@ const knowledgeTypeSchema = {
 };
 
 const tools = [
+  {
+    name: "relay_create_workspace",
+    title: "Create a new shared Workspace",
+    description: "Creates an isolated Relay Workspace that agents can join through its returned MCP URL. The Workspace gets its own memory, embeddings, shared chat, cache state, and analytics partition.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", minLength: 1, maxLength: 80, description: "Human-readable Workspace name." },
+        workspaceId: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$", description: "Optional stable ID. If omitted, Relay creates one from the name." },
+      },
+      required: ["name"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: false },
+  },
   {
     name: "relay_preflight",
     title: "Check team memory and estimate tokens",
@@ -200,6 +217,10 @@ function toolResult(value: unknown, message = "Relay request completed.") {
 }
 
 function toolMessage(name: string, value: unknown) {
+  if (name === "relay_create_workspace" && value && typeof value === "object") {
+    const created = value as { id?: string; name?: string; mcpPath?: string };
+    return [`Workspace created: ${created.name ?? "Untitled"}`, `Workspace ID: ${created.id ?? "unknown"}`, `Connect another MCP client with: ${created.mcpPath ?? "unavailable"}`].join("\n");
+  }
   if (name === "relay_preflight" && value && typeof value === "object" && "route" in value) {
     const preview = value as {
       route?: "semantic_cache" | "rag" | "full_generation";
@@ -291,6 +312,7 @@ async function workspaceResource(uri: string) {
 }
 
 async function callTool(actor: string, name: string, args: Record<string, unknown>) {
+  if (name === "relay_create_workspace") return createWorkspace({ actor, name: args.name, id: args.workspaceId });
   if (name === "relay_preflight") {
     return relayPreflight({ actor, question: args.question, operation: "preview" });
   }
@@ -366,8 +388,8 @@ async function handleRpc(request: Request, actor: string, call: JsonRpcRequest) 
     return result(id, {
       protocolVersion: PROTOCOL_VERSION,
       capabilities: { tools: { listChanged: false }, resources: { subscribe: false, listChanged: false } },
-      serverInfo: { name: "relay-shared-workspace", title: "Relay Shared AI Workspace", version: "0.2.0" },
-      instructions: "For every prompt, call relay_preflight and show Hybrid, raw embedding, and normalized lexical similarity. If Semantic Cache, call relay_execute to display the answer, then ask Accept or RAG update and wait. Otherwise ask RAG or Full Generation and wait; only after the reply call relay_confirm_route, then relay_execute with its new preflight ID. After host generation, call relay_submit_result. Relay never calls the generation model.",
+      serverInfo: { name: "relay-shared-workspace", title: "Relay Shared AI Workspace", version: "0.3.0" },
+      instructions: "Use relay_create_workspace when the member asks to create a shared Workspace. For every workspace prompt, call relay_preflight and show Hybrid, raw embedding, and normalized lexical similarity. If Semantic Cache, call relay_execute to display the answer, then ask Accept or RAG update and wait. Otherwise ask RAG or Full Generation and wait; only after the reply call relay_confirm_route, then relay_execute with its new preflight ID. After host generation, call relay_submit_result. Relay never calls the generation model.",
     });
   }
   if (call.method === "ping") return result(id, {});
@@ -414,12 +436,14 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const actor = await requireMcpActor(request);
-    const payload = await request.json() as JsonRpcRequest | JsonRpcRequest[];
-    const calls = Array.isArray(payload) ? payload : [payload];
-    const responses = (await Promise.all(calls.map((call) => handleRpc(request, actor, call)))).filter(Boolean);
-    if (!responses.length) return new Response(null, { status: 202, headers: JSON_HEADERS });
-    return Response.json(Array.isArray(payload) ? responses : responses[0], { headers: JSON_HEADERS });
+    const access = await resolveMcpAccess(request);
+    return await withWorkspaceContext(access.workspace, async () => {
+      const payload = await request.json() as JsonRpcRequest | JsonRpcRequest[];
+      const calls = Array.isArray(payload) ? payload : [payload];
+      const responses = (await Promise.all(calls.map((call) => handleRpc(request, access.actor, call)))).filter(Boolean);
+      if (!responses.length) return new Response(null, { status: 202, headers: JSON_HEADERS });
+      return Response.json(Array.isArray(payload) ? responses : responses[0], { headers: JSON_HEADERS });
+    });
   } catch (error) {
     const status = error instanceof ApiError ? error.status : 500;
     const response = rpcError(null, status === 401 ? -32001 : -32603, error instanceof Error ? error.message : "Relay MCP request failed.");

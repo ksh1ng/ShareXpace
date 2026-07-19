@@ -1,5 +1,12 @@
 import { integer, primaryKey, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
+export const workspaces = sqliteTable("workspaces", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  createdBy: text("created_by").notNull(),
+  createdAt: text("created_at").notNull(),
+});
+
 export const memoryRecords = sqliteTable("memory_records", {
   id: text("id").primaryKey(),
   workspaceId: text("workspace_id").notNull(),
