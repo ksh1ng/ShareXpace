@@ -31,7 +31,8 @@ The Web API and MCP server share routing and freshness rules in `app/api/_lib/re
 
 The stateless Streamable HTTP-compatible endpoint is `https://<relay-host>/api/mcp`. It exposes:
 
-- `relay_create_workspace` — creates a new isolated Workspace registry/cache partition and returns the MCP URL path agents use to join it.
+- `relay_create_workspace` — creates a new isolated Workspace partition without creating another MCP connection.
+- `relay_list_workspaces` — lists the Workspace IDs available through the shared MCP server.
 - `relay_preflight` — performs semantic retrieval, TTL/version validation, input-token estimation, and previews every prompt with Hybrid, raw embedding, and normalized lexical similarity.
 - `relay_confirm_route` — records the member's explicit RAG or Full Generation choice and returns a new executable preflight.
 - `relay_execute` — returns a Semantic Cache answer or an `agent_action_required` handoff containing fresh context and host-agent instructions.
@@ -41,9 +42,9 @@ The stateless Streamable HTTP-compatible endpoint is `https://<relay-host>/api/m
 - `relay_post_update` — return agent progress or results to the shared chat without an LLM call.
 - `relay_get_workspace` — read route, savings, memory and MCP activity state.
 
-Resources are available at `relay://workspace/<workspace-id>/{summary,memory,activity,savings}`. `RoamTogether` is the default Workspace name and ID. The Hackathon Demo uses `RELAY_MCP_JOIN_MODE=workspace_id`: clients append any registered Workspace ID and an optional display label to the MCP URL, for example `/api/mcp?workspace_id=RoamTogether&member=Alice`. The Sites dispatch access mode must be `public` so non-browser MCP clients reach the Worker instead of receiving the Sign in with ChatGPT HTML page. The root layout still requires ChatGPT sign-in for the Dashboard, and browser data/write routes enforce authenticated-user headers. MCP calls are recorded in `mcp_events`. Because Streamable HTTP is stateless, the Dashboard defines a connected agent as an actor/client pair with MCP activity inside `RELAY_AGENT_ONLINE_WINDOW_SECONDS` and refreshes that view every ten seconds.
+Resources are available at `relay://workspace/<workspace-id>/{summary,memory,activity,savings}`. `RoamTogether` is the default Workspace name and ID. A client registers the MCP server once, for example `/api/mcp?member=Alice`. It then passes `workspaceId` to each Workspace tool; creating or switching a Workspace never requires another Codex MCP configuration. The Sites dispatch access mode must be `public` so non-browser MCP clients reach the Worker instead of receiving the Sign in with ChatGPT HTML page. The root layout still requires ChatGPT sign-in for the Dashboard, and browser data/write routes enforce authenticated-user headers. MCP calls are recorded in `mcp_events`. Because Streamable HTTP is stateless, the Dashboard defines a connected agent as an actor/client pair with MCP activity inside `RELAY_AGENT_ONLINE_WINDOW_SECONDS` and refreshes that view every ten seconds.
 
-Workspace selection is request-scoped with `AsyncLocalStorage`: the MCP URL resolves a row from the D1 `workspaces` registry, and every downstream memory, embedding, cache, chat and analytics query uses that Workspace ID. This prevents concurrent MCP requests for different Workspaces from leaking state. Any connected agent may call `relay_create_workspace({ name, workspaceId? })`; it returns a new MCP path that can be registered as another Codex MCP connection.
+Workspace selection is tool-call scoped with `AsyncLocalStorage`: each tool's `workspaceId` resolves a row from the D1 `workspaces` registry, and every downstream memory, embedding, cache, chat and analytics query uses that Workspace ID. This prevents concurrent calls for different Workspaces—even in one JSON-RPC batch—from leaking state. Any connected agent may call `relay_create_workspace({ name, workspaceId? })` and immediately use the returned ID through the same MCP connection.
 
 The Dashboard's Shared Knowledge view is intentionally curated: it only includes persisted answers whose routing event proves they were produced through RAG or Full Generation. Semantic Cache reuse, chat, uploads, source records, handoff events, and seeds do not appear as generated team knowledge.
 
@@ -121,7 +122,7 @@ Apply every SQL file in `drizzle/` to the production D1 database before serving 
 | `RELAY_MAX_OUTPUT_TOKENS` | no | Generation output ceiling; default `1200` |
 | `RELAY_MAX_INPUT_TOKENS` | no | Workspace input safety limit; default `100000` |
 | `RELAY_ALLOW_LOCAL_ANONYMOUS` | local only | Explicitly permits a local anonymous actor |
-| `RELAY_MCP_JOIN_MODE` | yes | `workspace_id` for the Hackathon Demo; use `bearer_token` for stricter deployments |
+| `RELAY_MCP_JOIN_MODE` | yes | `open` for the Hackathon Demo; use `bearer_token` for stricter deployments |
 | `RELAY_MCP_ACCESS_TOKENS` | bearer mode only | Optional secret JSON map of bearer tokens to workspace member names |
 | `RELAY_AGENT_ONLINE_WINDOW_SECONDS` | no | Recent MCP activity window used for Connected Agents; minimum `30`, default `120` |
 

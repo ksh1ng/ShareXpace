@@ -116,14 +116,16 @@ test("MCP routes cache locally and hands RAG/full work to the host agent", async
     read("../app/page.tsx"),
   ]);
 
-  for (const tool of ["relay_create_workspace", "relay_preflight", "relay_confirm_route", "relay_execute", "relay_submit_result", "relay_search_memory", "relay_rag_refresh_preflight", "relay_refresh", "relay_post_update", "relay_get_workspace"]) {
+  for (const tool of ["relay_create_workspace", "relay_list_workspaces", "relay_preflight", "relay_confirm_route", "relay_execute", "relay_submit_result", "relay_search_memory", "relay_rag_refresh_preflight", "relay_refresh", "relay_post_update", "relay_get_workspace"]) {
     assert.match(mcpRoute, new RegExp(tool));
   }
   assert.match(mcpRoute, /tools\/list/);
   assert.match(mcpRoute, /resources\/list/);
   assert.match(mcpRoute, /resources\/read/);
   assert.match(mcpRoute, /resolveMcpAccess/);
-  assert.match(mcpRoute, /withWorkspaceContext\(access\.workspace/);
+  assert.match(mcpRoute, /withWorkspaceContext\(workspace/);
+  assert.match(mcpRoute, /workspaceId is required for this Relay tool/);
+  assert.match(mcpRoute, /Never ask the member to add another MCP connection/);
   assert.match(relayService, /relayPreflight/);
   assert.match(relayService, /relayConfirmRoute/);
   assert.match(relayService, /relayExecute/);
@@ -153,8 +155,8 @@ test("MCP routes cache locally and hands RAG/full work to the host agent", async
   assert.match(workspace, /operation === "rag_refresh"/);
   assert.match(workspace, /keep\n  \/\/ routing local and deterministic|routing local and deterministic/);
   assert.match(workspace, /RELAY_MCP_JOIN_MODE/);
-  assert.match(workspace, /workspace_access_denied/);
-  assert.match(workspace, /searchParams\.get\("workspace_id"\)/);
+  assert.match(workspace, /listWorkspaces/);
+  assert.doesNotMatch(workspace, /searchParams\.get\("workspace_id"\)/);
   assert.match(schema, /mcpEvents/);
   assert.match(migration7, /CREATE TABLE `mcp_events`/);
   assert.match(schema, /export const workspaces/);
@@ -266,7 +268,8 @@ test("demo guide includes beginner Codex MCP setup and verification", async () =
   assert.match(guide, /Sign in with ChatGPT/);
   assert.match(guide, /INSTALL_RELAY_DEMO\.command/);
   assert.match(guide, /codex mcp add relay/);
-  assert.match(guide, /workspace_id=RoamTogether/);
+  assert.match(guide, /api\/mcp\?member=Alice/);
+  assert.match(guide, /relay_list_workspaces/);
   assert.doesNotMatch(guide, /--bearer-token-env-var RELAY_MCP_TOKEN/);
   assert.match(guide, /relay_get_workspace/);
   assert.match(guide, /Workspace ID: RoamTogether/);
@@ -274,7 +277,8 @@ test("demo guide includes beginner Codex MCP setup and verification", async () =
   assert.match(guide, /codex mcp remove relay/);
   assert.match(installer, /https:\/\/chatgpt\.com\/codex\/install\.sh/);
   assert.match(installer, /codex mcp add "\$RELAY_NAME"/);
-  assert.match(installer, /workspace_id=\$\{workspace_id\}/);
+  assert.match(installer, /connection_url="\$\{RELAY_URL\}\?member=\$\{member_name\}"/);
+  assert.doesNotMatch(installer, /entered_workspace_id|workspace_id=\$\{/);
   assert.doesNotMatch(installer, /launchctl setenv|bearer-token/);
   assert.match(installer, /launchctl unsetenv RELAY_MCP_TOKEN/);
   assert.match(installer, /"method":"initialize"/);
