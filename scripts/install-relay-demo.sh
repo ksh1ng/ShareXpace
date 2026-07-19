@@ -72,23 +72,18 @@ export PATH="$HOME/.local/bin:$PATH"
 command -v codex >/dev/null 2>&1 || fail "Codex was not found after installation. Open a new Terminal and run this installer again."
 codex --version
 
-step "Joining the Relay workspace"
-workspace_id="${RELAY_WORKSPACE_ID:-$WORKSPACE_ID}"
+step "Connecting to the shared-workspace MCP server"
 member_name="${RELAY_MEMBER_NAME:-DemoMember}"
 if [ -r /dev/tty ]; then
-  printf 'Workspace ID [%s]: ' "$workspace_id"
-  IFS= read -r entered_workspace_id </dev/tty
-  workspace_id="${entered_workspace_id:-$workspace_id}"
   printf 'Display name [%s]: ' "$member_name"
   IFS= read -r entered_member_name </dev/tty
   member_name="${entered_member_name:-$member_name}"
 fi
 
-case "$workspace_id" in *[!a-zA-Z0-9_.-]*|'') fail "Workspace ID may contain only letters, numbers, dots, underscores, and hyphens." ;; esac
 case "$member_name" in *[!a-zA-Z0-9_.-]*|'') fail "Display name may contain only letters, numbers, dots, underscores, and hyphens." ;; esac
-connection_url="${RELAY_URL}?workspace_id=${workspace_id}&member=${member_name}"
+connection_url="${RELAY_URL}?member=${member_name}"
 
-# Remove the credential left by installer versions that predated Workspace-ID join mode.
+# Remove the credential left by older bearer-token installer versions.
 unset RELAY_MCP_TOKEN 2>/dev/null || true
 if [ "$(uname -s)" = "Darwin" ] && command -v launchctl >/dev/null 2>&1; then
   launchctl unsetenv RELAY_MCP_TOKEN >/dev/null 2>&1 || true
@@ -116,7 +111,7 @@ handshake_status="$(curl --silent --show-error \
   --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"relay-demo-installer","version":"1.0"}}}')"
 
 if [ "$handshake_status" != "200" ] || ! grep -q '"protocolVersion"' "$TEMP_HANDSHAKE"; then
-  fail "Relay MCP handshake returned HTTP $handshake_status. Confirm the Production URL and Workspace ID, then run the installer again."
+  fail "Relay MCP handshake returned HTTP $handshake_status. Confirm the Production URL, then run the installer again."
 fi
 printf 'Relay MCP handshake succeeded (HTTP 200).\n'
 
@@ -124,13 +119,13 @@ cat <<EOF
 
 Relay Demo setup is complete.
 
-Workspace name: $WORKSPACE_NAME
-Workspace ID:   $workspace_id
+Default Workspace name: $WORKSPACE_NAME
+Default Workspace ID:   $WORKSPACE_ID
 Member label:   $member_name
 MCP server:     $connection_url
 
 In Codex, send this first message:
-  請使用 Relay MCP 的 relay_get_workspace，回報 Workspace name 與 Workspace ID。
+  請使用 Relay MCP 的 relay_list_workspaces 列出 Workspaces，再以 workspaceId "$WORKSPACE_ID" 呼叫 relay_get_workspace。
 
 If this is your first Codex launch, choose "Sign in with ChatGPT" when prompted.
 To remove the demo setup later:

@@ -136,7 +136,8 @@ export function appMode() {
 }
 
 export function mcpJoinMode() {
-  return runtimeEnv().RELAY_MCP_JOIN_MODE?.trim() === "workspace_id" ? "workspace_id" : "bearer_token";
+  const mode = runtimeEnv().RELAY_MCP_JOIN_MODE?.trim();
+  return mode === "open" || mode === "workspace_id" ? "open" : "bearer_token";
 }
 
 export function agentOnlineWindowSeconds() {
@@ -241,29 +242,28 @@ export async function getWorkspace(workspaceIdValue: string) {
     .first<WorkspaceContext>();
 }
 
+export async function listWorkspaces() {
+  const result = await runtimeEnv().DB.prepare("SELECT id, name, created_by, created_at FROM workspaces ORDER BY created_at ASC")
+    .all<{ id: string; name: string; created_by: string; created_at: string }>();
+  return result.results ?? [];
+}
+
 export async function resolveMcpAccess(request: Request) {
   const sitesActor = actorFrom(request);
+  if (sitesActor) return { actor: sitesActor };
   const url = new URL(request.url);
-  const requestedWorkspaceId = url.searchParams.get("workspace_id")?.trim() || workspaceId();
-  const workspace = await getWorkspace(requestedWorkspaceId);
-  if (!workspace) throw new ApiError("The requested Workspace does not exist.", 403, "workspace_access_denied");
-  if (sitesActor) return { actor: sitesActor, workspace };
-  if (mcpJoinMode() === "workspace_id") {
-    const suppliedWorkspaceId = url.searchParams.get("workspace_id")?.trim() || "";
-    if (!suppliedWorkspaceId || !await sameSecret(workspace.id, suppliedWorkspaceId)) {
-      throw new ApiError("A valid Workspace ID is required in the MCP URL.", 403, "workspace_access_denied");
-    }
+  if (mcpJoinMode() === "open") {
     const suppliedMember = url.searchParams.get("member")?.trim() || "";
     const member = suppliedMember.replace(/[^a-zA-Z0-9_. -]/g, "").slice(0, 80).trim();
-    return { actor: member || "Workspace Member", workspace };
+    return { actor: member || "Shared Workspace Member" };
   }
   const authorization = request.headers.get("authorization") ?? "";
   const supplied = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
   const configured = configuredMcpTokens();
   for (const [token, actor] of configured) {
-    if (supplied && await sameSecret(token, supplied)) return { actor: actor.trim(), workspace };
+    if (supplied && await sameSecret(token, supplied)) return { actor: actor.trim() };
   }
-  if (runtimeEnv().RELAY_ALLOW_LOCAL_ANONYMOUS === "true") return { actor: "Local MCP Developer", workspace };
+  if (runtimeEnv().RELAY_ALLOW_LOCAL_ANONYMOUS === "true") return { actor: "Local MCP Developer" };
   throw new ApiError("A valid Relay MCP bearer token is required.", 401, "mcp_authentication_required");
 }
 
@@ -296,7 +296,13 @@ export async function createWorkspace(input: { name: unknown; id?: unknown; acto
     runtimeEnv().DB.prepare("INSERT INTO workspaces (id, name, created_by, created_at) VALUES (?, ?, ?, ?)").bind(id, name, input.actor, createdAt),
     runtimeEnv().DB.prepare("INSERT INTO workspace_cache_state (workspace_id, knowledge_version, updated_at) VALUES (?, 1, ?)").bind(id, createdAt),
   ]);
-  return { id, name, createdBy: input.actor, createdAt, mcpPath: `/api/mcp?workspace_id=${encodeURIComponent(id)}&member=<display-name>` };
+  return {
+    id,
+    name,
+    createdBy: input.actor,
+    createdAt,
+    nextStep: `Use workspaceId \"${id}\" in Relay workspace tools on the existing MCP connection.`,
+  };
 }
 
 export function validateQuestion(value: unknown) {
@@ -595,7 +601,7 @@ export async function getWorkspaceState() {
       return { ready: status.ready, provider: status.provider, model: status.model, dimensions: status.dimensions };
     })(),
     mcp: {
-      enabled: mcpJoinMode() === "workspace_id" || configuredMcpTokens().size > 0 || runtimeEnv().RELAY_ALLOW_LOCAL_ANONYMOUS === "true",
+      enabled: mcpJoinMode() === "open" || configuredMcpTokens().size > 0 || runtimeEnv().RELAY_ALLOW_LOCAL_ANONYMOUS === "true",
       onlineWindowSeconds,
       members: mcpMembers.results.map((member) => ({ actor: member.actor, clientName: member.client_name, lastSeen: member.last_seen, calls: member.calls })),
       events: mcpEvents.results.map((event) => ({ actor: event.actor, clientName: event.client_name, method: event.method, toolName: event.tool_name, success: Boolean(event.success), route: event.route, createdAt: event.created_at })),
