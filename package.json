@@ -38,5 +38,14 @@
     "vite": "8.0.13",
     "wrangler": "4.92.0"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "fsevents",
+      "sharp",
+      "unrs-resolver",
+      "workerd"
+    ]
+  },
   "type": "module"
 }
