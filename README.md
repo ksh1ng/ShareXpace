@@ -4,6 +4,18 @@ Relay is a shared AI workspace and MCP gateway for teams and their personal agen
 
 The production edition deliberately has no demo seeds, fabricated model answers, anonymous hosted fallback, or shared demo database. It requires migrated D1 storage and authenticated requests. For MCP clients, Relay is now a routing and shared-memory layer rather than an LLM proxy: Semantic Cache returns a stored answer, while RAG and Full Generation return an agent handoff so Codex, ChatGPT, or an IDE agent performs the generation with its own host model.
 
+## One-click Codex plugin
+
+The repo now includes the installable **Relay Shared Workspace** plugin at `plugins/relay-shared-workspace` and exposes it through `.agents/plugins/marketplace.json`. Installing the plugin bundles both the production remote MCP connection and the Relay routing workflow, so users no longer need to run `codex mcp add`, edit Codex configuration, provide an API key, or add a Relay member token.
+
+In the Codex desktop app, open this repository, restart once, then choose **Plugins → Relay Build Week → Relay Shared Workspace → Install**. Start a new task with:
+
+```text
+Set up Relay and show available workspaces.
+```
+
+Codex will list existing Workspaces, select or create one, and use the same bundled MCP connection for all later Workspace activity. See `plugins/relay-shared-workspace/README.md` for the short installation guide. Codex itself remains a prerequisite because a plugin cannot install its own host application.
+
 ## Product architecture
 
 ```mermaid

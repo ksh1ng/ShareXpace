@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "relay": {
+      "type": "http",
+      "url": "https://relay-production-2026.opompm841218.chatgpt.site/api/mcp?member=Codex%20Plugin"
+    }
+  }
+}
