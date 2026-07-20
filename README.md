@@ -59,6 +59,7 @@ Resources are available at `relay://workspace/<workspace-id>/{summary,memory,act
 Workspace selection is tool-call scoped with `AsyncLocalStorage`: each tool's `workspaceId` resolves a row from the D1 `workspaces` registry, and every downstream memory, embedding, cache, chat and analytics query uses that Workspace ID. This prevents concurrent calls for different Workspaces—even in one JSON-RPC batch—from leaking state. Any connected agent may call `relay_create_workspace({ name, workspaceId? })` and immediately use the returned ID through the same MCP connection.
 
 Each Workspace also has a signed-in Dashboard route at `https://<relay-host>/<workspace-id>`. The browser app appends that ID to every API request, and the API resolves the same request-scoped Workspace context used by MCP. For example, `RoamTogether` is available at `/RoamTogether`; a newly created `ProductLaunch` Workspace immediately receives `/ProductLaunch` in `relay_create_workspace.uiUrl`.
+The dynamic Workspace route is covered by a server-rendering regression test so shareable Dashboard URLs cannot accidentally recurse into the route component.
 
 The Dashboard's Shared Knowledge view is intentionally curated: it only includes persisted answers whose routing event proves they were produced through RAG or Full Generation. Semantic Cache reuse, chat, uploads, source records, handoff events, and seeds do not appear as generated team knowledge.
 
