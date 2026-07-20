@@ -1,6 +1,6 @@
 {
   "name": "relay-shared-workspace",
-  "version": "0.1.0+codex.20260720022432",
+  "version": "0.1.0+codex.20260720053707",
   "description": "Connect Codex to Relay so agents can share workspaces, team memory, routing, and token savings.",
   "author": {
     "name": "Relay Build Week Team",

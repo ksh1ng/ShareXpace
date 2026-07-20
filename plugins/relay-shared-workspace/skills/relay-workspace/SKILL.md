@@ -7,6 +7,8 @@ description: Use Relay Shared Workspace MCP whenever the user wants to set up Re
 
 Use the bundled `relay` MCP server. Installing this plugin already configures the remote MCP endpoint; do not ask the user to run `codex mcp add`, provide an API key, add a member token, or create another MCP connection.
 
+Relay's hosted service owns D1 shared memory, R2 uploads, document chunks, embeddings, Semantic Cache, and Dashboard analytics. The user's Codex host owns all RAG and Full Generation inference: never request or send the user's model API key to Relay. Uploaded documents may be retrieved as chunk context in a handoff, but the host agent must still submit its generated result through `relay_submit_result`.
+
 ## First use
 
 When the user asks to set up, connect, or start Relay:
