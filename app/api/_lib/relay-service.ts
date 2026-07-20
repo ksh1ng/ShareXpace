@@ -1,4 +1,5 @@
 import { estimateWorkspaceTokens, generateWorkspaceAnswer, type BillingMode } from "./model";
+import { retrieveDocumentChunks } from "./document-ingestion";
 import {
   ApiError,
   bumpKnowledgeVersion,
@@ -61,6 +62,21 @@ export function presentMatch(match: Awaited<ReturnType<typeof estimateWorkspaceT
   };
 }
 
+function presentDocumentMatch(match: Awaited<ReturnType<typeof estimateWorkspaceTokens>>["plan"]["documentBest"]) {
+  if (!match) return null;
+  return {
+    id: match.chunk.id,
+    kind: "document_chunk" as const,
+    title: `${match.chunk.file_name} · chunk ${match.chunk.chunk_index + 1}`,
+    fileId: match.chunk.file_id,
+    chunkIndex: match.chunk.chunk_index,
+    score: Math.round(match.score * 100),
+    lexicalScore: Math.round(match.lexicalScore * 100),
+    semanticScore: Math.round(match.semanticScore * 100),
+    retrievalMode: match.retrievalMode,
+  };
+}
+
 async function knowledgeTarget(recordId: string, sourceRequired = false) {
   const record = await runtimeEnv().DB.prepare("SELECT * FROM memory_records WHERE id = ? AND workspace_id = ?")
     .bind(recordId, workspaceId())
@@ -101,6 +117,7 @@ export async function relayPreflight(input: {
     targetRecordId: target?.id ?? null,
   });
   const match = presentMatch(result.plan.best);
+  const documentMatch = presentDocumentMatch(result.plan.documentBest);
   return {
     estimate: result.estimate,
     route: result.plan.route,
@@ -108,6 +125,7 @@ export async function relayPreflight(input: {
     // Always expose the best candidate and all three scores for MCP route
     // preview, including when Full Generation is recommended.
     match,
+    documentMatch,
     thresholds: routeThresholds(),
     retrieval: result.plan.retrieval,
   };
@@ -343,15 +361,22 @@ export async function relayCreateAgentHandoff(input: {
   const rows = (await runtimeEnv().DB.prepare("SELECT * FROM memory_records WHERE workspace_id = ? AND superseded_by IS NULL ORDER BY created_at DESC LIMIT 100")
     .bind(workspaceId())
     .all<MemoryRow>()).results.filter((record) => freshness(record).fresh);
-  const retrieved = await retrieveWorkspaceAnswers(question, runtimeEnv().OPENAI_API_KEY?.trim(), 5);
+  const [retrieved, documentRetrieved] = await Promise.all([
+    retrieveWorkspaceAnswers(question, runtimeEnv().OPENAI_API_KEY?.trim(), 5),
+    retrieveDocumentChunks(question, runtimeEnv().OPENAI_API_KEY?.trim(), estimate.route === "rag" ? 6 : 12),
+  ]);
   const ragIds = new Set(retrieved.matches.filter((match) => match.score >= routeThresholds().rag).map((match) => match.record.id));
-  const context = (estimate.route === "rag" ? rows.filter((record) => ragIds.has(record.id)) : rows)
+  const memoryContext = (estimate.route === "rag" ? rows.filter((record) => ragIds.has(record.id)) : rows)
     .slice(0, estimate.route === "rag" ? 5 : 30)
     .map(handoffContextLine);
+  const documentContext = documentRetrieved.matches
+    .filter((match) => estimate.route !== "rag" || match.score >= routeThresholds().rag)
+    .map((match) => `[uploaded document: ${match.chunk.file_name}, chunk ${match.chunk.chunk_index + 1}] ${match.chunk.content} [retrieval confidence ${Math.round(match.score * 100)}%]`);
+  const context = [...memoryContext, ...documentContext];
   await recordRoutingEvent({
     route: estimate.route,
     action: "agent_handoff",
-    similarity: retrieved.matches[0]?.score ?? 0,
+    similarity: Math.max(retrieved.matches[0]?.score ?? 0, documentRetrieved.matches[0]?.score ?? 0),
     recordId: estimate.record_id,
   });
   return {
@@ -377,7 +402,7 @@ export async function relayCreateAgentHandoff(input: {
       modelCalled: false,
       relayGenerationTokens: 0,
       estimatedHostInputTokens: estimate.estimated_input_tokens,
-      retrievalInputTokens: estimate.retrieval_input_tokens + retrieved.embeddingInputTokens,
+      retrievalInputTokens: estimate.retrieval_input_tokens + retrieved.embeddingInputTokens + documentRetrieved.embeddingInputTokens,
     },
   };
 }

@@ -23,6 +23,7 @@ import {
   type MemoryRow,
   type TokenOperation,
 } from "./workspace";
+import { retrieveDocumentChunks } from "./document-ingestion";
 
 export type { BillingMode } from "./workspace";
 
@@ -48,6 +49,7 @@ type WorkspacePlan = {
   route: DefenseRoute;
   operation: TokenOperation;
   best: Awaited<ReturnType<typeof retrieveWorkspaceAnswers>>["matches"][number] | null;
+  documentBest: Awaited<ReturnType<typeof retrieveDocumentChunks>>["matches"][number] | null;
   retrievalInputTokens: number;
   recordId: string | null;
   promptCacheKey: string;
@@ -60,7 +62,7 @@ type WorkspacePlan = {
     embeddingModel?: string;
     embeddingPurpose?: string;
     embeddingFallbackReason?: string;
-    sources: Array<{ id: string; title: string; score: number; summary: string | null; sourceUrl: string | null }>;
+    sources: Array<{ id: string; title: string; score: number; summary: string | null; sourceUrl: string | null; kind: "answer" | "document_chunk"; fileId?: string; chunkIndex?: number }>;
   };
 };
 
@@ -90,10 +92,20 @@ async function buildWorkspacePlan(input: {
   targetRecordId?: string | null;
 }) : Promise<WorkspacePlan> {
   const { DB } = runtimeEnv();
-  const retrievalResult = await retrieveWorkspaceAnswers(input.question, input.apiKey, 5);
+  const [retrievalResult, documentRetrieval] = await Promise.all([
+    retrieveWorkspaceAnswers(input.question, input.apiKey, 5),
+    retrieveDocumentChunks(input.question, input.apiKey, 6),
+  ]);
   const retrieved = retrievalResult.matches;
   const best = retrieved[0] ?? null;
-  const route = classifyDefenseRoute(best, input.operation);
+  const documentBest = documentRetrieval.matches[0] ?? null;
+  let route = classifyDefenseRoute(best, input.operation);
+  if (
+    route === "full_generation" &&
+    input.operation !== "refresh" &&
+    input.operation !== "force_full_generation" &&
+    documentBest && documentBest.score >= routeThresholds().rag
+  ) route = "rag";
   const validRetrieved = retrieved.filter((match) => match.freshness.fresh);
   const allRows = (await DB.prepare("SELECT * FROM memory_records WHERE workspace_id = ? AND superseded_by IS NULL ORDER BY created_at DESC LIMIT 100")
     .bind(workspaceId())
@@ -102,9 +114,13 @@ async function buildWorkspacePlan(input: {
   const stableRows = validRows.filter((record) => record.knowledge_type === "static" || record.knowledge_type === "internal_decision");
   const dynamicRows = validRows.filter((record) => record.knowledge_type !== "static" && record.knowledge_type !== "internal_decision");
   const ragRows = validRetrieved.filter((match) => match.score >= routeThresholds().rag).slice(0, 5);
+  const ragDocumentChunks = documentRetrieval.matches.filter((match) => match.score >= routeThresholds().rag).slice(0, 6);
   const stableContext = stableRows.map(contextLine).join("\n") || "No stable workspace knowledge is available.";
   const dynamicContext = route === "rag"
-    ? ragRows.map((match) => `${contextLine(match.record)} [retrieval confidence ${Math.round(match.score * 100)}%]`).join("\n")
+    ? [
+      ...ragRows.map((match) => `${contextLine(match.record)} [retrieval confidence ${Math.round(match.score * 100)}%]`),
+      ...ragDocumentChunks.map((match) => `- [uploaded document: ${match.chunk.file_name}, chunk ${match.chunk.chunk_index + 1}] ${match.chunk.content} [retrieval confidence ${Math.round(match.score * 100)}%]`),
+    ].join("\n")
     : dynamicRows.map(contextLine).join("\n");
   const refreshInstruction = input.operation === "refresh" && input.sourceUrl
     ? `Refresh target source: ${input.sourceUrl}\nUse current source information and explicitly note uncertainty if the source cannot be verified.`
@@ -134,25 +150,39 @@ async function buildWorkspacePlan(input: {
     route,
     operation: input.operation,
     best,
-    retrievalInputTokens: retrievalResult.embeddingInputTokens,
+    documentBest,
+    retrievalInputTokens: retrievalResult.embeddingInputTokens + documentRetrieval.embeddingInputTokens,
     recordId,
     promptCacheKey,
     knowledgeVersion,
     requestInput,
     tools,
     retrieval: {
-      mode: best?.retrievalMode ?? "hybrid",
-      embeddingProvider: retrievalResult.embeddingProvider,
-      embeddingModel: retrievalResult.embeddingModel,
+      mode: documentBest && (!best || documentBest.score > best.score) ? `document_${documentBest.retrievalMode}` : best?.retrievalMode ?? "hybrid",
+      embeddingProvider: documentBest ? documentRetrieval.embeddingProvider : retrievalResult.embeddingProvider,
+      embeddingModel: documentBest ? documentRetrieval.embeddingModel ?? undefined : retrievalResult.embeddingModel,
       embeddingPurpose: retrievalResult.embeddingPurpose,
-      embeddingFallbackReason: retrievalResult.embeddingFallbackReason,
-      sources: (route === "rag" ? ragRows : []).map((match) => ({
-        id: match.record.id,
-        title: match.record.title,
-        score: Math.round(match.score * 100),
-        summary: match.record.summary,
-        sourceUrl: match.record.source_url,
-      })),
+      embeddingFallbackReason: documentRetrieval.embeddingFallbackReason ?? retrievalResult.embeddingFallbackReason,
+      sources: route === "rag" ? [
+        ...ragRows.map((match) => ({
+          id: match.record.id,
+          title: match.record.title,
+          score: Math.round(match.score * 100),
+          summary: match.record.summary,
+          sourceUrl: match.record.source_url,
+          kind: "answer" as const,
+        })),
+        ...ragDocumentChunks.map((match) => ({
+          id: match.chunk.id,
+          title: `${match.chunk.file_name} · chunk ${match.chunk.chunk_index + 1}`,
+          score: Math.round(match.score * 100),
+          summary: match.chunk.content,
+          sourceUrl: null,
+          kind: "document_chunk" as const,
+          fileId: match.chunk.file_id,
+          chunkIndex: match.chunk.chunk_index,
+        })),
+      ] : [],
     },
   };
 }

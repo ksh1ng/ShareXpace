@@ -64,6 +64,13 @@
       "when": 1784462711820,
       "tag": "0008_nosy_stranger",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1784520534741,
+      "tag": "0009_famous_angel",
+      "breakpoints": true
     }
   ]
 }

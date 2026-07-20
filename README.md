@@ -63,6 +63,8 @@ The dynamic Workspace route is covered by a server-rendering regression test so 
 
 The Dashboard's Shared Knowledge view is intentionally curated: it only includes persisted answers whose routing event proves they were produced through RAG or Full Generation. Semantic Cache reuse, chat, uploads, source records, handoff events, and seeds do not appear as generated team knowledge.
 
+Uploads are durable RAG sources, not metadata-only attachments. Relay writes the original bytes to R2, stores the object metadata and processing state in D1, extracts readable content, creates overlapping document chunks, and embeds each chunk into a Workspace-isolated vector index. TXT, Markdown, CSV, and JSON parse locally; PDF and image extraction uses the configured Gemini parser model. If extraction or embeddings are unavailable, the R2 object remains intact and text documents continue through lexical chunk retrieval. MCP and Web RAG handoffs include the best matching file chunks with file name, chunk number, similarity and source ID.
+
 Authenticated Dashboard users can choose **Reset knowledge** and confirm both the current Workspace ID and `RESET SHARED KNOWLEDGE`. The server deletes all Workspace memory records, cached record embeddings, exact-answer cache entries, uploaded source objects/metadata, and pending token estimates, then increments the knowledge version so provider prompt-cache namespaces cannot reuse the deleted context. Shared chat and historical routing/model/MCP analytics are retained.
 
 ## Token lifecycle
@@ -100,7 +102,7 @@ flowchart LR
 - Refresh creates a new record version and preserves the old record as superseded.
 - MCP RAG and Full Generation never call a generation model from Relay or require a Workspace Master generation key.
 - Host-agent results are not trusted as fresh until they are submitted through the bound handoff lifecycle.
-- Uploads have a 10 MB limit, an allow-listed MIME type, sanitized R2 keys, and metadata stored in D1.
+- Uploads have a 10 MB limit, an allow-listed MIME type, sanitized R2 keys, automatic extraction/chunk indexing, and explicit `pending`, `indexed`, `indexed_lexical`, `stored_only`, or `failed` processing status in D1.
 - D1 schema creation is migration-only. Request handlers do not silently create tables or insert seeds.
 
 ## Local setup

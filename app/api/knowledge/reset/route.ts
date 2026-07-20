@@ -4,7 +4,7 @@ const RESET_PHRASE = "RESET SHARED KNOWLEDGE";
 
 type CountRow = { count: number };
 
-async function countRows(table: "memory_records" | "record_embeddings" | "workspace_files") {
+async function countRows(table: "memory_records" | "record_embeddings" | "workspace_files" | "document_chunks" | "document_chunk_embeddings") {
   return (await runtimeEnv().DB.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE workspace_id = ?`)
     .bind(workspaceId())
     .first<CountRow>())?.count ?? 0;
@@ -28,6 +28,8 @@ export async function POST(request: Request) {
       sharedKnowledge: await countRows("memory_records"),
       embeddings: await countRows("record_embeddings"),
       uploadedFiles: await countRows("workspace_files"),
+      documentChunks: await countRows("document_chunks"),
+      documentChunkEmbeddings: await countRows("document_chunk_embeddings"),
     };
     const objects = (await DB.prepare("SELECT object_key FROM workspace_files WHERE workspace_id = ?")
       .bind(id)
@@ -35,6 +37,8 @@ export async function POST(request: Request) {
     if (FILES) await Promise.all(objects.map((object) => FILES.delete(object.object_key)));
 
     await DB.batch([
+      DB.prepare("DELETE FROM document_chunk_embeddings WHERE workspace_id = ?").bind(id),
+      DB.prepare("DELETE FROM document_chunks WHERE workspace_id = ?").bind(id),
       DB.prepare("DELETE FROM record_embeddings WHERE workspace_id = ?").bind(id),
       DB.prepare("DELETE FROM answer_cache WHERE workspace_id = ?").bind(id),
       DB.prepare("DELETE FROM token_estimates WHERE workspace_id = ?").bind(id),
