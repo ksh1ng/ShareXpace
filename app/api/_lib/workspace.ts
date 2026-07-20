@@ -31,6 +31,7 @@ type RuntimeEnv = {
   RELAY_MCP_JOIN_MODE?: string;
   RELAY_MCP_ACCESS_TOKENS?: string;
   RELAY_AGENT_ONLINE_WINDOW_SECONDS?: string;
+  RELAY_DOCUMENT_PARSER_MODEL?: string;
 };
 
 export type MemoryRow = {
@@ -64,6 +65,13 @@ export type FileRow = {
   object_key: string;
   author: string;
   created_at: string;
+  content_hash: string | null;
+  processing_status: "pending" | "indexed" | "indexed_lexical" | "stored_only" | "failed";
+  processing_error: string | null;
+  extracted_text_length: number;
+  chunk_count: number;
+  embedded_chunk_count: number;
+  processed_at: string | null;
 };
 
 export type ChatRow = {
@@ -362,6 +370,8 @@ export async function ensureWorkspace() {
     await DB.prepare("SELECT id FROM workspaces WHERE id = ? LIMIT 1").bind(id).first();
     await DB.prepare("SELECT id FROM memory_records WHERE workspace_id = ? LIMIT 1").bind(id).first();
     await DB.prepare("SELECT claimed_at FROM token_estimates WHERE workspace_id = ? LIMIT 1").bind(id).first();
+    await DB.prepare("SELECT processing_status FROM workspace_files WHERE workspace_id = ? LIMIT 1").bind(id).first();
+    await DB.prepare("SELECT id FROM document_chunks WHERE workspace_id = ? LIMIT 1").bind(id).first();
   } catch {
     throw new ApiError("Database migrations have not been applied.", 503, "database_not_ready");
   }
@@ -575,7 +585,7 @@ export async function getWorkspaceState() {
   const name = workspaceName();
   const onlineWindowSeconds = agentOnlineWindowSeconds();
   const onlineCutoff = new Date(Date.now() - onlineWindowSeconds * 1000).toISOString();
-  const [records, files, reuse, model, cacheState, routes, estimated, preflights, mcpMembers, mcpEvents] = await Promise.all([
+  const [records, files, documentIndex, reuse, model, cacheState, routes, estimated, preflights, mcpMembers, mcpEvents] = await Promise.all([
     DB.prepare(`SELECT memory_records.* FROM memory_records
       WHERE memory_records.workspace_id = ?
         AND memory_records.kind = 'answer'
@@ -588,6 +598,12 @@ export async function getWorkspaceState() {
         )
       ORDER BY memory_records.created_at DESC LIMIT 80`).bind(id).all<MemoryRow>(),
     DB.prepare("SELECT * FROM workspace_files WHERE workspace_id = ? ORDER BY created_at DESC LIMIT 30").bind(id).all<FileRow>(),
+    DB.prepare(`SELECT
+      COUNT(*) AS files,
+      COALESCE(SUM(CASE WHEN processing_status IN ('indexed', 'indexed_lexical') THEN 1 ELSE 0 END), 0) AS indexed_files,
+      COALESCE(SUM(chunk_count), 0) AS chunks,
+      COALESCE(SUM(embedded_chunk_count), 0) AS embedded_chunks
+      FROM workspace_files WHERE workspace_id = ?`).bind(id).first<{ files: number; indexed_files: number; chunks: number; embedded_chunks: number }>(),
     DB.prepare("SELECT COUNT(*) AS duplicates FROM reuse_events WHERE workspace_id = ?").bind(id).first<{ duplicates: number }>(),
     DB.prepare("SELECT COUNT(*) AS calls, COALESCE(SUM(cached_tokens), 0) AS cached_tokens, COALESCE(SUM(cache_write_tokens), 0) AS cache_write_tokens FROM model_calls WHERE workspace_id = ?").bind(id).first<{ calls: number; cached_tokens: number; cache_write_tokens: number }>(),
     DB.prepare("SELECT knowledge_version FROM workspace_cache_state WHERE workspace_id = ?").bind(id).first<{ knowledge_version: number }>(),
@@ -606,6 +622,12 @@ export async function getWorkspaceState() {
   return {
     records: records.results,
     files: files.results,
+    documents: {
+      files: documentIndex?.files ?? 0,
+      indexedFiles: documentIndex?.indexed_files ?? 0,
+      chunks: documentIndex?.chunks ?? 0,
+      embeddedChunks: documentIndex?.embedded_chunks ?? 0,
+    },
     stats: { duplicates: reuse?.duplicates ?? 0, tokensSaved: estimated?.saved ?? 0 },
     defense: {
       routes: routeCounts,
@@ -721,6 +743,78 @@ async function createGeminiEmbeddings(provider: EmbeddingProvider, query: string
     vectors: (data.embeddings ?? []).map((item) => item.values ?? []),
     inputTokens: data.usageMetadata?.promptTokenCount ?? 0,
   };
+}
+
+export async function embedRetrievalTexts(
+  inputs: string[],
+  task: "query" | "document",
+  openAiApiKey?: string,
+) {
+  const status = embeddingProviderStatus(openAiApiKey);
+  const provider = status.config;
+  if (!provider || !inputs.length) {
+    return {
+      vectors: [] as number[][],
+      inputTokens: 0,
+      provider: status.provider,
+      model: status.model,
+      cacheModel: null as string | null,
+      dimensions: status.dimensions,
+      fallbackReason: provider ? null : "No embedding credential is configured for document retrieval.",
+    };
+  }
+  try {
+    if (provider.kind === "openai") {
+      const result = await createOpenAiEmbeddings(provider, inputs);
+      return {
+        ...result,
+        provider: provider.kind,
+        model: provider.model,
+        cacheModel: `${provider.model}:retrieval:v1`,
+        dimensions: provider.dimensions,
+        fallbackReason: null as string | null,
+      };
+    }
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${provider.model}:batchEmbedContents`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": provider.apiKey },
+      body: JSON.stringify({
+        requests: inputs.map((text) => ({
+          model: `models/${provider.model}`,
+          content: { parts: [{ text }] },
+          embedContentConfig: {
+            taskType: task === "query" ? "RETRIEVAL_QUERY" : "RETRIEVAL_DOCUMENT",
+            outputDimensionality: provider.dimensions,
+            autoTruncate: true,
+          },
+        })),
+      }),
+    });
+    if (!response.ok) {
+      const detail = (await response.text()).replace(/\s+/g, " ").slice(0, 500);
+      throw new Error(`Gemini document embedding failed (${response.status})${detail ? `: ${detail}` : "."}`);
+    }
+    const data = await response.json() as GeminiEmbeddingResponse;
+    return {
+      vectors: (data.embeddings ?? []).map((item) => item.values ?? []),
+      inputTokens: data.usageMetadata?.promptTokenCount ?? 0,
+      provider: provider.kind,
+      model: provider.model,
+      cacheModel: `${provider.model}:retrieval:v1`,
+      dimensions: provider.dimensions,
+      fallbackReason: null as string | null,
+    };
+  } catch (error) {
+    return {
+      vectors: [] as number[][],
+      inputTokens: 0,
+      provider: provider.kind,
+      model: provider.model,
+      cacheModel: `${provider.model}:retrieval:v1`,
+      dimensions: provider.dimensions,
+      fallbackReason: error instanceof Error ? error.message : "Document embedding failed.",
+    };
+  }
 }
 
 function cosineSimilarity(a: number[], b: number[]) {

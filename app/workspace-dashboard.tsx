@@ -125,6 +125,13 @@ type EmbeddingStatus = {
   dimensions: number;
 };
 
+type DocumentIndexStatus = {
+  files: number;
+  indexedFiles: number;
+  chunks: number;
+  embeddedChunks: number;
+};
+
 type WorkspaceInfo = {
   id: string;
   name: string;
@@ -160,6 +167,7 @@ export default function WorkspaceDashboard({ initialWorkspaceId }: { initialWork
   const [pendingChatRun, setPendingChatRun] = useState<{ sourceMessageId: string; instruction: string; estimate: TokenEstimate } | null>(null);
   const [mcp, setMcp] = useState<McpStatus>({ enabled: false, onlineWindowSeconds: 120, members: [], events: [] });
   const [embedding, setEmbedding] = useState<EmbeddingStatus>({ ready: false, provider: "lexical", model: null, dimensions: 0 });
+  const [documents, setDocuments] = useState<DocumentIndexStatus>({ files: 0, indexedFiles: 0, chunks: 0, embeddedChunks: 0 });
   const [workspace, setWorkspace] = useState<WorkspaceInfo>({ id: "", name: "Loading workspace…" });
   const [resetOpen, setResetOpen] = useState(false);
   const [resetWorkspaceId, setResetWorkspaceId] = useState("");
@@ -176,7 +184,7 @@ export default function WorkspaceDashboard({ initialWorkspaceId }: { initialWork
         if (!response.ok) throw new Error("The shared workspace could not be loaded.");
         return response.json();
       })
-      .then((data: { records: MemoryItem[]; stats: { tokensSaved: number; duplicates: number }; promptCache: PromptCache; defense: DefenseStats; modelReady: boolean; mcp: McpStatus; embedding: EmbeddingStatus; workspace: WorkspaceInfo; workspaceId?: string; workspaceName?: string }) => {
+      .then((data: { records: MemoryItem[]; stats: { tokensSaved: number; duplicates: number }; promptCache: PromptCache; defense: DefenseStats; modelReady: boolean; mcp: McpStatus; embedding: EmbeddingStatus; documents: DocumentIndexStatus; workspace: WorkspaceInfo; workspaceId?: string; workspaceName?: string }) => {
         if (!active) return;
         setMemory(data.records);
         setDuplicates(data.stats.duplicates);
@@ -185,6 +193,7 @@ export default function WorkspaceDashboard({ initialWorkspaceId }: { initialWork
         setModelReady(data.modelReady);
         setMcp(data.mcp);
         setEmbedding(data.embedding);
+        setDocuments(data.documents ?? { files: 0, indexedFiles: 0, chunks: 0, embeddedChunks: 0 });
         setWorkspace(data.workspace ?? {
           id: data.workspaceId ?? "unknown-workspace",
           name: data.workspaceName ?? "Relay Workspace",
@@ -417,11 +426,18 @@ export default function WorkspaceDashboard({ initialWorkspaceId }: { initialWork
     form.set("file", file);
     try {
       const response = await fetch(workspaceApi("/api/files"), { method: "POST", body: form });
-      const data = await response.json() as { record: MemoryItem; knowledgeVersion: number; error?: string };
+      const data = await response.json() as {
+        record: MemoryItem;
+        indexing: { status: string; chunkCount: number; embeddedChunkCount: number; processingError?: string | null };
+        knowledgeVersion: number;
+        error?: string;
+      };
       if (!response.ok) throw new Error(data.error || "The file could not be uploaded.");
       setPromptCache((current) => ({ ...current, knowledgeVersion: data.knowledgeVersion }));
-      setToast(`${file.name} uploaded to workspace sources`);
-      window.setTimeout(() => setToast(""), 2600);
+      setToast(data.indexing.chunkCount
+        ? `${file.name} indexed · ${data.indexing.chunkCount} chunks · ${data.indexing.embeddedChunkCount} embeddings`
+        : `${file.name} stored in R2 · ${data.indexing.processingError ?? "no searchable text was created"}`);
+      window.setTimeout(() => setToast(""), 4200);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "The file could not be uploaded.");
     } finally {
@@ -559,6 +575,7 @@ export default function WorkspaceDashboard({ initialWorkspaceId }: { initialWork
               <div><span>Active agents</span><strong>{mcp.members.length}</strong></div>
               <div><span>Recent MCP calls</span><strong>{mcp.members.reduce((total, member) => total + member.calls, 0)}</strong></div>
               <div><span>Semantic retrieval</span><strong>{embedding.ready ? `${embedding.provider} · ${embedding.dimensions}d` : "lexical fallback"}</strong></div>
+              <div><span>Document RAG</span><strong>{documents.chunks} chunks · {documents.embeddedChunks} vectors</strong></div>
               <small>Every Relay-funded generation requires a short-lived, identity-bound preflight.</small>
             </div>
           </section>
@@ -684,7 +701,7 @@ export default function WorkspaceDashboard({ initialWorkspaceId }: { initialWork
 
           <section className="knowledge-section">
             <div className="section-heading"><div><h2>Shared knowledge</h2><p>Responses saved after RAG or Full Generation. Cache reuses, chat messages and uploaded sources stay out of this view.</p></div><div className="knowledge-actions"><button className="reset-knowledge-button" onClick={() => setResetOpen(true)} disabled={searching || resettingKnowledge} type="button">Reset knowledge</button><button className="upload-button" onClick={() => fileInput.current?.click()} disabled={searching || resettingKnowledge} type="button">↑ Upload source</button></div></div>
-            <input ref={fileInput} className="visually-hidden" type="file" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadFile(file); }} />
+            <input ref={fileInput} className="visually-hidden" type="file" accept=".txt,.md,.csv,.json,.pdf,image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadFile(file); }} />
             <div className="filter-row">
               <button className="active" type="button">Generated responses<span>{memory.length}</span></button>
               <button className="sort-button" type="button">Newest first⌄</button>

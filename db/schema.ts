@@ -1,4 +1,4 @@
-import { integer, primaryKey, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, primaryKey, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 export const workspaces = sqliteTable("workspaces", {
   id: text("id").primaryKey(),
@@ -48,7 +48,36 @@ export const workspaceFiles = sqliteTable("workspace_files", {
   objectKey: text("object_key").notNull(),
   author: text("author").notNull(),
   createdAt: text("created_at").notNull(),
+  contentHash: text("content_hash"),
+  processingStatus: text("processing_status").notNull().default("pending"),
+  processingError: text("processing_error"),
+  extractedTextLength: integer("extracted_text_length").notNull().default(0),
+  chunkCount: integer("chunk_count").notNull().default(0),
+  embeddedChunkCount: integer("embedded_chunk_count").notNull().default(0),
+  processedAt: text("processed_at"),
 });
+
+export const documentChunks = sqliteTable("document_chunks", {
+  id: text("id").primaryKey(),
+  workspaceId: text("workspace_id").notNull(),
+  fileId: text("file_id").notNull(),
+  fileName: text("file_name").notNull(),
+  chunkIndex: integer("chunk_index").notNull(),
+  content: text("content").notNull(),
+  tokenCount: integer("token_count").notNull().default(0),
+  charStart: integer("char_start").notNull(),
+  charEnd: integer("char_end").notNull(),
+  createdAt: text("created_at").notNull(),
+}, (table) => [index("document_chunks_workspace_file_idx").on(table.workspaceId, table.fileId)]);
+
+export const documentChunkEmbeddings = sqliteTable("document_chunk_embeddings", {
+  chunkId: text("chunk_id").primaryKey(),
+  workspaceId: text("workspace_id").notNull(),
+  model: text("model").notNull(),
+  dimensions: integer("dimensions").notNull(),
+  embeddingJson: text("embedding_json").notNull(),
+  createdAt: text("created_at").notNull(),
+}, (table) => [index("document_chunk_embeddings_workspace_model_idx").on(table.workspaceId, table.model, table.dimensions)]);
 
 export const answerCache = sqliteTable("answer_cache", {
   workspaceId: text("workspace_id").notNull(),

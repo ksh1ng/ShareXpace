@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 import { lexicalSimilarity } from "../app/api/_lib/retrieval-scoring.ts";
+import { chunkDocument } from "../app/api/_lib/document-chunking.ts";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
@@ -190,6 +191,44 @@ test("semantic retrieval supports Gemini with cached vectors and safe fallback",
   assert.match(envExample, /GEMINI_API_KEY=/);
   assert.match(envExample, /RELAY_EMBEDDING_PROVIDER=auto/);
   assert.match(readme, /one query embedding/);
+});
+
+test("R2 uploads are parsed, chunked, embedded, retrieved, and reset per workspace", async () => {
+  const [filesRoute, ingestion, schema, migration9, model, relayService, resetRoute, stateRoute, page, envExample] = await Promise.all([
+    read("../app/api/files/route.ts"),
+    read("../app/api/_lib/document-ingestion.ts"),
+    read("../db/schema.ts"),
+    read("../drizzle/0009_famous_angel.sql"),
+    read("../app/api/_lib/model.ts"),
+    read("../app/api/_lib/relay-service.ts"),
+    read("../app/api/knowledge/reset/route.ts"),
+    read("../app/api/state/route.ts"),
+    read("../app/workspace-dashboard.tsx"),
+    read("../.env.example"),
+  ]);
+  assert.match(filesRoute, /FILES\.put/);
+  assert.match(filesRoute, /indexUploadedDocument/);
+  assert.match(ingestion, /extractDocumentText/);
+  assert.match(ingestion, /document_chunk_embeddings/);
+  assert.match(ingestion, /retrieveDocumentChunks/);
+  assert.match(ingestion, /embedRetrievalTexts\(batch\.map\(\(chunk\) => chunk\.content\), "document"\)/);
+  assert.match(schema, /documentChunks/);
+  assert.match(schema, /documentChunkEmbeddings/);
+  assert.match(migration9, /CREATE TABLE `document_chunks`/);
+  assert.match(migration9, /ADD `processing_status`/);
+  assert.match(model, /ragDocumentChunks/);
+  assert.match(relayService, /uploaded document/);
+  assert.match(resetRoute, /DELETE FROM document_chunk_embeddings/);
+  assert.match(resetRoute, /DELETE FROM document_chunks/);
+  assert.match(stateRoute, /documents: state\.documents/);
+  assert.match(page, /Document RAG/);
+  assert.match(envExample, /RELAY_DOCUMENT_PARSER_MODEL=gemini-2\.5-flash/);
+
+  const text = `${"A".repeat(1_200)}\n\n${"B".repeat(1_200)}`;
+  const chunks = chunkDocument(text);
+  assert.ok(chunks.length >= 2);
+  assert.ok(chunks.every((chunk) => chunk.content.length <= 1_600));
+  assert.ok(chunks[1].charStart < chunks[0].charEnd, "adjacent chunks should overlap");
 });
 
 test("dashboard and MCP expose the configured workspace identity", async () => {

@@ -259,9 +259,12 @@ function toolMessage(name: string, value: unknown) {
       autoRouted?: boolean;
       estimate?: { id?: string };
       match?: { score?: number; semanticScore?: number; lexicalScore?: number; title?: string } | null;
+      documentMatch?: { score?: number; semanticScore?: number; lexicalScore?: number; title?: string } | null;
       retrieval?: { embeddingProvider?: string; embeddingModel?: string; embeddingPurpose?: string; embeddingFallbackReason?: string };
     };
-    const match = preview.match;
+    const match = !preview.match || (preview.documentMatch?.score ?? -1) > (preview.match.score ?? -1)
+      ? preview.documentMatch
+      : preview.match;
     const scores = [
       `Hybrid similarity: ${match?.score ?? 0}%`,
       `Raw embedding similarity: ${match?.semanticScore ?? 0}%`,
@@ -276,7 +279,7 @@ function toolMessage(name: string, value: unknown) {
         `Workspace ID: ${workspaceId()}`,
         ...scores,
         embeddingStatus,
-        `Matched memory: ${match?.title ?? "none"}`,
+        `Matched team knowledge: ${match?.title ?? "none"}`,
         "Recommended route: Semantic Cache.",
         "Call relay_execute now to display the cached answer. After displaying it, ask the member to accept it or request a RAG update.",
       ].join("\n");
@@ -287,7 +290,7 @@ function toolMessage(name: string, value: unknown) {
         `Workspace ID: ${workspaceId()}`,
         ...scores,
         embeddingStatus,
-        `Matched memory: ${match?.title ?? "none"}`,
+        `Matched team knowledge: ${match?.title ?? "none"}`,
         "Recommended route: Full Generation.",
         "Automatic route: all three displayed similarity scores are 0%, so there is no useful team knowledge for RAG.",
         `MANDATORY HOST BEHAVIOR: Do not ask the member to choose a route. Call relay_execute now with workspaceId \`${workspaceId()}\`, preflightId \`${preview.estimate?.id ?? ""}\`, and the unchanged question. Use the returned Full Generation handoff, then call relay_submit_result.`,
@@ -298,7 +301,7 @@ function toolMessage(name: string, value: unknown) {
       `Workspace ID: ${workspaceId()}`,
       ...scores,
       embeddingStatus,
-      `Matched memory: ${match?.title ?? "none"}`,
+      `Matched team knowledge: ${match?.title ?? "none"}`,
       `Recommended route: ${preview.route === "rag" ? "RAG" : "Full Generation"}.`,
       "MANDATORY HOST BEHAVIOR: Show these three scores to the member, ask whether to use RAG or Full Generation, end this turn, and wait. Do not call relay_execute or any other Relay tool in this turn.",
       `After the member chooses in a later turn, call relay_confirm_route with previewId \`${preview.estimate?.id ?? ""}\`, the unchanged question, selectedRoute, and confirmedByUser=true.`,
@@ -371,7 +374,10 @@ async function callTool(actor: string, name: string, args: Record<string, unknow
   if (name === "relay_list_workspaces") return listWorkspaces();
   if (name === "relay_preflight") {
     const preview = await relayPreflight({ actor, question: args.question, operation: "preview" });
-    const scores = [preview.match?.score ?? 0, preview.match?.semanticScore ?? 0, preview.match?.lexicalScore ?? 0];
+    const routeMatch = !preview.match || (preview.documentMatch?.score ?? -1) > (preview.match.score ?? -1)
+      ? preview.documentMatch
+      : preview.match;
+    const scores = [routeMatch?.score ?? 0, routeMatch?.semanticScore ?? 0, routeMatch?.lexicalScore ?? 0];
     if (preview.route === "full_generation" && scores.every((score) => score === 0)) {
       const confirmed = await relayConfirmRoute({
         actor,

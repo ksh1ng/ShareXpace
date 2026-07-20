@@ -1,6 +1,6 @@
-onlyBuiltDependencies:
-  - esbuild
-  - fsevents
-  - sharp
-  - unrs-resolver
-  - workerd
+allowBuilds:
+  esbuild: true
+  fsevents: true
+  sharp: true
+  unrs-resolver: true
+  workerd: true

@@ -28,6 +28,7 @@ export async function GET(request: Request) {
         stale: Boolean(record.superseded_by || record.requires_refresh || (record.expires_at && new Date(record.expires_at).getTime() <= Date.now())),
       })),
       files: state.files,
+      documents: state.documents,
       stats: state.stats,
       promptCache: state.promptCache,
       defense: state.defense,

@@ -145,7 +145,11 @@ The five knowledge types are `static`, `semi_dynamic`, `dynamic`, `transactional
 - `routing_events`: route counts, provider cached tokens, and avoided-generation estimates.
 - `model_calls`: provider prompt-cache audit.
 - `mcp_events`: MCP member/client activity, tool success and selected route.
-- `workspace_files` plus R2 `FILES`: uploaded object metadata and bytes.
+- `workspace_files` plus R2 `FILES`: uploaded object metadata, ingestion status, checksum and original bytes.
+- `document_chunks`: overlapping extracted text partitions scoped by `workspace_id` and `file_id`.
+- `document_chunk_embeddings`: provider/model-specific chunk vectors; missing vectors are filled lazily during retrieval.
+
+`app/api/files/route.ts` stores the R2 object first, then calls `indexUploadedDocument()`. `document-ingestion.ts` selects the parser, persists chunks, batches embedding requests, and records partial/failure state without deleting the durable object. `retrieveDocumentChunks()` performs hybrid semantic/lexical ranking. Both `buildWorkspacePlan()` (Web) and `relayCreateAgentHandoff()` (MCP) merge these document matches into RAG context. `document-chunking.ts` is deliberately provider-independent so chunk boundaries can be regression-tested without a Worker runtime.
 
 Request handlers call `ensureWorkspace()` to verify required tables and the selected registry row. Schema is migration-only; only the explicit `relay_create_workspace` tool creates Workspace registry/cache rows.
 
