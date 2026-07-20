@@ -1,9 +1,9 @@
 import type { BillingMode } from "../../_lib/model";
 import { relayExecute } from "../../_lib/relay-service";
-import { errorResponse, requireActor } from "../../_lib/workspace";
+import { requireActor, withRequestedWorkspaceResponse } from "../../_lib/workspace";
 
 export async function POST(request: Request) {
-  try {
+  return withRequestedWorkspaceResponse(request, "Unable to refresh this knowledge record.", async () => {
     const actor = requireActor(request);
     const body = await request.json() as { recordId?: string; estimateId?: string; billingMode?: BillingMode; personalApiKey?: string; agent?: string };
     if (!body.recordId) return Response.json({ error: "Record is required.", code: "record_required" }, { status: 400 });
@@ -19,7 +19,5 @@ export async function POST(request: Request) {
       recordId: body.recordId,
     });
     return Response.json(result, { status: 201 });
-  } catch (error) {
-    return errorResponse(error, "Unable to refresh this knowledge record.");
-  }
+  });
 }

@@ -14,12 +14,14 @@ import {
   resolveApiKey,
   runtimeEnv,
   validateQuestion,
+  withRequestedWorkspaceResponse,
   workspaceId,
 } from "../../_lib/workspace";
 
 export async function POST(request: Request) {
-  let sourceId: string | null = null;
-  try {
+  return withRequestedWorkspaceResponse(request, "The agent task failed.", async () => {
+    let sourceId: string | null = null;
+    try {
     const actor = requireActor(request);
     await ensureWorkspace();
     const body = await request.json() as {
@@ -89,8 +91,9 @@ export async function POST(request: Request) {
       defense,
       usage,
     }, { status: 201 });
-  } catch (error) {
-    if (sourceId) await runtimeEnv().DB.prepare("UPDATE chat_messages SET task_status = 'failed' WHERE id = ? AND workspace_id = ?").bind(sourceId, workspaceId()).run();
-    return errorResponse(error, "The agent task failed.");
-  }
+    } catch (error) {
+      if (sourceId) await runtimeEnv().DB.prepare("UPDATE chat_messages SET task_status = 'failed' WHERE id = ? AND workspace_id = ?").bind(sourceId, workspaceId()).run();
+      return errorResponse(error, "The agent task failed.");
+    }
+  });
 }

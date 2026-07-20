@@ -248,6 +248,16 @@ export async function listWorkspaces() {
   return result.results ?? [];
 }
 
+export async function requestedBrowserWorkspace(request: Request) {
+  const requestedId = new URL(request.url).searchParams.get("workspace_id")?.trim() || workspaceId();
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(requestedId)) {
+    throw new ApiError("Workspace ID is invalid.", 400, "workspace_id_invalid");
+  }
+  const workspace = await getWorkspace(requestedId);
+  if (!workspace) throw new ApiError("Workspace not found.", 404, "workspace_not_found");
+  return workspace;
+}
+
 export async function resolveMcpAccess(request: Request) {
   const sitesActor = actorFrom(request);
   if (sitesActor) return { actor: sitesActor };
@@ -301,6 +311,7 @@ export async function createWorkspace(input: { name: unknown; id?: unknown; acto
     name,
     createdBy: input.actor,
     createdAt,
+    uiPath: `/${encodeURIComponent(id)}`,
     nextStep: `Use workspaceId \"${id}\" in Relay workspace tools on the existing MCP connection.`,
   };
 }
@@ -317,6 +328,19 @@ export function errorResponse(error: unknown, fallback: string) {
     return Response.json({ error: error.message, code: error.code }, { status: error.status });
   }
   return Response.json({ error: error instanceof Error ? error.message : fallback, code: "internal_error" }, { status: 500 });
+}
+
+export async function withRequestedWorkspaceResponse(
+  request: Request,
+  fallback: string,
+  operation: () => Response | Promise<Response>,
+) {
+  try {
+    const workspace = await requestedBrowserWorkspace(request);
+    return await withWorkspaceContext(workspace, operation);
+  } catch (error) {
+    return errorResponse(error, fallback);
+  }
 }
 
 export function resolveApiKey(billingMode: BillingMode, personalApiKey?: string) {

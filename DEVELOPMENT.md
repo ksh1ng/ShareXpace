@@ -40,7 +40,8 @@ sequenceDiagram
 
 ### UI
 
-- `app/page.tsx`: workspace state, shared chat, Ask flow, two-click estimate/confirm interaction, actual-usage cards, master/BYOK selection.
+- `app/workspace-dashboard.tsx`: workspace state, URL-scoped API calls, shared chat, Ask flow, two-click estimate/confirm interaction, actual-usage cards, master/BYOK selection.
+- `app/page.tsx` and `app/[workspaceId]/page.tsx`: authenticated root/default and shareable per-Workspace Dashboard entry points.
 - `app/globals.css`: production UI styling, preflight, usage, and chat handoff states.
 - `app/layout.tsx`: metadata and social card URL.
 
@@ -66,9 +67,10 @@ Every route uses `requireActor()` and `errorResponse()` from `workspace.ts`.
 ### MCP gateway
 
 - `app/api/mcp/route.ts` owns MCP protocol handling, tool/resource descriptors, Workspace-ID join validation, and tool-call audit events.
-- `app/layout.tsx` enforces Dashboard SIWC after the Sites dispatch layer is made public for remote MCP transport. Route handlers under `app/api/mcp` are not wrapped by the page layout; browser APIs retain their own `requireActor` checks.
+- `app/page.tsx` and `app/[workspaceId]/page.tsx` enforce Dashboard SIWC after the Sites dispatch layer is made public for remote MCP transport. The dynamic page preserves its Workspace path through sign-in. Route handlers under `app/api/mcp` are not wrapped by page authentication; browser APIs retain their own `requireActor` checks.
 - `app/api/_lib/relay-service.ts` is the transport-neutral application layer shared by MCP and Web API routes.
 - `relay_create_workspace` inserts a validated row into `workspaces` plus its initial cache state. `relay_list_workspaces` exposes registered IDs; neither operation needs a second MCP connection.
+- `relay_create_workspace` enriches its result with the absolute `uiUrl` derived from the MCP request origin. Browser routes pass `workspace_id` to `withRequestedWorkspaceResponse()`, so `/ProductLaunch` and MCP `workspaceId: ProductLaunch` reach the same isolated partition.
 - `resolveMcpAccess()` resolves the MCP actor once. Every Workspace tool requires `workspaceId`; the MCP handler resolves that registry row and `withWorkspaceContext()` carries `{id,name}` through the individual asynchronous tool call. Every existing `workspaceId()` consumer therefore remains isolated without mutable global state, including concurrent calls for different Workspaces.
 - `relay_preflight` must precede `relay_execute`; direct execute attempts fail because no matching `token_estimates` authorization record exists.
 - MCP `relay_preflight` returns all three similarity scores. A Full Generation result with displayed Hybrid/embedding/lexical scores all equal to zero is automatically confirmed server-side and returns an executable preflight; asking the user would offer a RAG route with no evidence. When any related score is nonzero, `relay_confirm_route` must consume the preview after explicit user choice and create the executable RAG or Full Generation preflight. A still-unconfirmed preview cannot execute.

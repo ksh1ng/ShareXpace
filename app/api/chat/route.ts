@@ -1,4 +1,4 @@
-import { ensureWorkspace, errorResponse, getChatMessages, relativeTime, requireActor, runtimeEnv, workspaceId } from "../_lib/workspace";
+import { ensureWorkspace, getChatMessages, relativeTime, requireActor, runtimeEnv, withRequestedWorkspaceResponse, workspaceId } from "../_lib/workspace";
 
 function present(message: Awaited<ReturnType<typeof getChatMessages>>[number]) {
   return {
@@ -16,16 +16,14 @@ function present(message: Awaited<ReturnType<typeof getChatMessages>>[number]) {
 }
 
 export async function GET(request: Request) {
-  try {
+  return withRequestedWorkspaceResponse(request, "Unable to load shared chat.", async () => {
     requireActor(request);
     return Response.json({ messages: (await getChatMessages()).map(present) });
-  } catch (error) {
-    return errorResponse(error, "Unable to load shared chat.");
-  }
+  });
 }
 
 export async function POST(request: Request) {
-  try {
+  return withRequestedWorkspaceResponse(request, "Unable to post this message.", async () => {
     const actor = requireActor(request);
     await ensureWorkspace();
     const body = await request.json() as { content?: string; callAgent?: boolean; agent?: string; billingMode?: "master" | "personal" };
@@ -44,7 +42,5 @@ export async function POST(request: Request) {
       .bind(id, workspaceId(), actor, type, content, agent, billingMode, status, createdAt)
       .run();
     return Response.json({ message: { id, author: actor, type, content, agent, model: null, billingMode, status, sourceMessageId: null, time: "Just now" } }, { status: 201 });
-  } catch (error) {
-    return errorResponse(error, "Unable to post this message.");
-  }
+  });
 }

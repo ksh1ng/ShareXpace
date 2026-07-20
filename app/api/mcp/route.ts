@@ -45,7 +45,7 @@ const tools = [
   {
     name: "relay_create_workspace",
     title: "Create a new shared Workspace",
-    description: "Creates an isolated Relay Workspace on this MCP server. Keep using the same MCP connection and pass the returned ID as workspaceId to every workspace tool.",
+    description: "Creates an isolated Relay Workspace on this MCP server and returns its shareable Dashboard UI URL. Keep using the same MCP connection and pass the returned ID as workspaceId to every workspace tool.",
     inputSchema: {
       type: "object",
       properties: {
@@ -239,10 +239,11 @@ function toolResult(value: unknown, message = "Relay request completed.") {
 
 function toolMessage(name: string, value: unknown) {
   if (name === "relay_create_workspace" && value && typeof value === "object") {
-    const created = value as { id?: string; name?: string; nextStep?: string };
+    const created = value as { id?: string; name?: string; nextStep?: string; uiUrl?: string };
     return [
       `Workspace created: ${created.name ?? "Untitled"}`,
       `Workspace ID: ${created.id ?? "unknown"}`,
+      `Workspace UI: ${created.uiUrl ?? "unavailable"}`,
       "Keep using this shared-workspace MCP connection.",
       created.nextStep ?? `Pass workspaceId \"${created.id ?? "unknown"}\" to the next Relay tool.`,
     ].join("\n");
@@ -487,8 +488,9 @@ async function handleRpc(request: Request, actor: string, call: JsonRpcRequest) 
         return result(id, toolResult(value, toolMessage(name, value)));
       }
       if (name === "relay_create_workspace") {
-        const value = await callTool(actor, name, args) as { id: string };
-        const workspace = await getWorkspace(value.id);
+        const created = await callTool(actor, name, args) as { id: string; uiPath: string };
+        const value = { ...created, uiUrl: `${new URL(request.url).origin}${created.uiPath}` };
+        const workspace = await getWorkspace(created.id);
         if (workspace) await withWorkspaceContext(workspace, () => recordMcpEvent({ actor, clientName: clientName(request), method, toolName: name, success: true }));
         return result(id, toolResult(value, toolMessage(name, value)));
       }

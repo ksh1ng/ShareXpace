@@ -1,4 +1,4 @@
-import { bumpKnowledgeVersion, ensureWorkspace, errorResponse, expiresAtFor, requireActor, runtimeEnv, workspaceId } from "../_lib/workspace";
+import { bumpKnowledgeVersion, ensureWorkspace, expiresAtFor, requireActor, runtimeEnv, withRequestedWorkspaceResponse, workspaceId } from "../_lib/workspace";
 
 const ALLOWED_CONTENT_TYPES = new Set([
   "application/pdf",
@@ -12,7 +12,7 @@ const ALLOWED_CONTENT_TYPES = new Set([
 ]);
 
 export async function POST(request: Request) {
-  try {
+  return withRequestedWorkspaceResponse(request, "The file could not be uploaded.", async () => {
     const author = requireActor(request);
     await ensureWorkspace();
     const { DB, FILES } = runtimeEnv();
@@ -51,7 +51,5 @@ export async function POST(request: Request) {
       },
       knowledgeVersion,
     }, { status: 201 });
-  } catch (error) {
-    return errorResponse(error, "The file could not be uploaded.");
-  }
+  });
 }

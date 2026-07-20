@@ -9,7 +9,7 @@ const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 
 test("production edition has exact preflight and provider-reported usage", async () => {
   const [page, layout, model, estimateRoute, askRoute, reuseRoute] = await Promise.all([
-    read("../app/page.tsx"),
+    read("../app/workspace-dashboard.tsx"),
     read("../app/layout.tsx"),
     read("../app/api/_lib/model.ts"),
     read("../app/api/questions/estimate/route.ts"),
@@ -113,7 +113,7 @@ test("MCP routes cache locally and hands RAG/full work to the host agent", async
     read("../db/schema.ts"),
     read("../drizzle/0007_mysterious_ironclad.sql"),
     read("../drizzle/0008_nosy_stranger.sql"),
-    read("../app/page.tsx"),
+    read("../app/workspace-dashboard.tsx"),
   ]);
 
   for (const tool of ["relay_create_workspace", "relay_list_workspaces", "relay_preflight", "relay_confirm_route", "relay_execute", "relay_submit_result", "relay_search_memory", "relay_rag_refresh_preflight", "relay_refresh", "relay_post_update", "relay_get_workspace"]) {
@@ -160,7 +160,8 @@ test("MCP routes cache locally and hands RAG/full work to the host agent", async
   assert.match(workspace, /keep\n  \/\/ routing local and deterministic|routing local and deterministic/);
   assert.match(workspace, /RELAY_MCP_JOIN_MODE/);
   assert.match(workspace, /listWorkspaces/);
-  assert.doesNotMatch(workspace, /searchParams\.get\("workspace_id"\)/);
+  assert.match(workspace, /requestedBrowserWorkspace/);
+  assert.match(mcpRoute, /endpoint: "\/api\/mcp\?member=<display-name>"/);
   assert.match(schema, /mcpEvents/);
   assert.match(migration7, /CREATE TABLE `mcp_events`/);
   assert.match(schema, /export const workspaces/);
@@ -193,7 +194,7 @@ test("semantic retrieval supports Gemini with cached vectors and safe fallback",
 
 test("dashboard and MCP expose the configured workspace identity", async () => {
   const [page, stateRoute, mcpRoute, workspace, envExample] = await Promise.all([
-    read("../app/page.tsx"),
+    read("../app/workspace-dashboard.tsx"),
     read("../app/api/state/route.ts"),
     read("../app/api/mcp/route.ts"),
     read("../app/api/_lib/workspace.ts"),
@@ -213,12 +214,44 @@ test("dashboard and MCP expose the configured workspace identity", async () => {
   assert.match(workspace, /AsyncLocalStorage<WorkspaceContext>/);
   assert.match(workspace, /createWorkspace/);
   assert.match(workspace, /INSERT INTO workspaces/);
+  assert.match(mcpRoute, /uiUrl: `\$\{new URL\(request\.url\)\.origin\}\$\{created\.uiPath\}`/);
+  assert.match(mcpRoute, /Workspace UI:/);
+  assert.match(page, /workspaceApi\("\/api\/state"\)/);
+});
+
+test("workspace dashboard URLs scope every browser API to the selected partition", async () => {
+  const [dashboard, dynamicPage, workspace, ...routes] = await Promise.all([
+    read("../app/workspace-dashboard.tsx"),
+    read("../app/[workspaceId]/page.tsx"),
+    read("../app/api/_lib/workspace.ts"),
+    ...[
+      "chat/route.ts",
+      "chat/run/route.ts",
+      "files/route.ts",
+      "knowledge/refresh/route.ts",
+      "knowledge/reset/route.ts",
+      "questions/ask/route.ts",
+      "questions/check/route.ts",
+      "questions/estimate/route.ts",
+      "reuse/route.ts",
+      "state/route.ts",
+    ].map((route) => read(`../app/api/${route}`)),
+  ]);
+
+  assert.match(dynamicPage, /initialWorkspaceId=\{decodedWorkspaceId\}/);
+  assert.match(dashboard, /workspaceQuery = initialWorkspaceId/);
+  for (const endpoint of ["state", "chat", "questions/estimate", "reuse", "questions/ask", "knowledge/refresh", "chat/run", "files", "knowledge/reset"]) {
+    assert.match(dashboard, new RegExp(`workspaceApi\\(\"\\/api\\/${endpoint.replace("/", "\\/")}\"\\)`));
+  }
+  assert.match(workspace, /searchParams\.get\("workspace_id"\)/);
+  assert.match(workspace, /withWorkspaceContext\(workspace, operation\)/);
+  for (const route of routes) assert.match(route, /withRequestedWorkspaceResponse/);
 });
 
 test("dashboard presence is recent-only and shared knowledge is generated-only", async () => {
   const [workspace, page, envExample, readme] = await Promise.all([
     read("../app/api/_lib/workspace.ts"),
-    read("../app/page.tsx"),
+    read("../app/workspace-dashboard.tsx"),
     read("../.env.example"),
     read("../README.md"),
   ]);
@@ -240,7 +273,7 @@ test("dashboard presence is recent-only and shared knowledge is generated-only",
 
 test("shared knowledge reset is authenticated, confirmed, and clears vector state", async () => {
   const [page, route, readme] = await Promise.all([
-    read("../app/page.tsx"),
+    read("../app/workspace-dashboard.tsx"),
     read("../app/api/knowledge/reset/route.ts"),
     read("../README.md"),
   ]);
@@ -295,12 +328,14 @@ test("demo guide includes beginner Codex MCP setup and verification", async () =
 });
 
 test("production removes runtime demo bootstrap and requires identity", async () => {
-  const [workspace, envExample, hosting, readme, layout, stateRoute] = await Promise.all([
+  const [workspace, envExample, hosting, readme, layout, rootPage, workspacePage, stateRoute] = await Promise.all([
     read("../app/api/_lib/workspace.ts"),
     read("../.env.example"),
     read("../.openai/hosting.json"),
     read("../README.md"),
     read("../app/layout.tsx"),
+    read("../app/page.tsx"),
+    read("../app/[workspaceId]/page.tsx"),
     read("../app/api/state/route.ts"),
   ]);
 
@@ -311,7 +346,9 @@ test("production removes runtime demo bootstrap and requires identity", async ()
   assert.match(hosting, /"d1": "DB"/);
   assert.match(hosting, /"project_id": "appgprj_/);
   assert.match(readme, /no demo seeds/);
-  assert.match(layout, /requireChatGPTUser\("\/"\)/);
+  assert.match(rootPage, /requireChatGPTUser\("\/"\)/);
+  assert.match(workspacePage, /requireChatGPTUser\(`\/\$\{encodeURIComponent\(decodedWorkspaceId\)\}`\)/);
+  assert.match(workspacePage, /initialWorkspaceId=\{decodedWorkspaceId\}/);
   assert.match(layout, /force-dynamic/);
   assert.match(stateRoute, /requireActor\(request\)/);
   assert.match(readme, /public at the dispatch layer/);

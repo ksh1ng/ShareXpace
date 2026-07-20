@@ -1,9 +1,9 @@
 import type { BillingMode } from "../../_lib/model";
 import { relayExecute } from "../../_lib/relay-service";
-import { ensureWorkspace, errorResponse, requireActor, validateQuestion, type TokenOperation } from "../../_lib/workspace";
+import { ensureWorkspace, requireActor, validateQuestion, withRequestedWorkspaceResponse, type TokenOperation } from "../../_lib/workspace";
 
 export async function POST(request: Request) {
-  try {
+  return withRequestedWorkspaceResponse(request, "The agent could not complete the request.", async () => {
     const actor = requireActor(request);
     await ensureWorkspace();
     const body = await request.json() as {
@@ -27,7 +27,5 @@ export async function POST(request: Request) {
       operation,
     });
     return Response.json(result, { status: 201 });
-  } catch (error) {
-    return errorResponse(error, "The agent could not complete the request.");
-  }
+  });
 }
