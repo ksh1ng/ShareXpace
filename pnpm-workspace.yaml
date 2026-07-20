@@ -1,5 +1,6 @@
 onlyBuiltDependencies:
   - esbuild
+  - fsevents
   - sharp
   - unrs-resolver
   - workerd
