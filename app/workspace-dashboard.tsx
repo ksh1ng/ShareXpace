@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type MemoryItem = {
   id: string;
@@ -167,7 +167,7 @@ export default function WorkspaceDashboard({ initialWorkspaceId }: { initialWork
   const [resettingKnowledge, setResettingKnowledge] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const workspaceQuery = initialWorkspaceId ? `?workspace_id=${encodeURIComponent(initialWorkspaceId)}` : "";
-  const workspaceApi = (path: string) => `${path}${workspaceQuery}`;
+  const workspaceApi = useCallback((path: string) => `${path}${workspaceQuery}`, [workspaceQuery]);
 
   useEffect(() => {
     let active = true;
@@ -195,7 +195,7 @@ export default function WorkspaceDashboard({ initialWorkspaceId }: { initialWork
     void loadWorkspace();
     const interval = window.setInterval(loadWorkspace, 10000);
     return () => { active = false; window.clearInterval(interval); };
-  }, [workspaceQuery]);
+  }, [workspaceApi]);
 
   useEffect(() => {
     let active = true;
@@ -204,7 +204,7 @@ export default function WorkspaceDashboard({ initialWorkspaceId }: { initialWork
     void load();
     const interval = window.setInterval(load, 5000);
     return () => { active = false; window.clearInterval(interval); };
-  }, [workspaceQuery]);
+  }, [workspaceApi]);
 
   async function copyWorkspaceId() {
     if (!workspace.id) return;

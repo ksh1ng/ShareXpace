@@ -304,6 +304,12 @@ test("demo guide includes beginner Codex MCP setup and verification", async () =
   assert.match(guide, /codex --version/);
   assert.match(guide, /Sign in with ChatGPT/);
   assert.match(guide, /INSTALL_RELAY_DEMO\.command/);
+  assert.match(guide, /## 3\. Codex App 展示版本/);
+  assert.match(guide, /## 4\. Codex CLI 展示版本/);
+  assert.match(guide, /Codex → Plugins/);
+  assert.match(guide, /Relay Shared Workspace/);
+  assert.match(guide, /用 `\/plugins` 從 \*\*Relay Build Week\*\* 安裝 Plugin/);
+  assert.match(guide, /Plugin 安裝前已開啟的舊 task 不會自動載入/);
   assert.match(guide, /codex mcp add relay/);
   assert.match(guide, /api\/mcp\?member=Alice/);
   assert.match(guide, /relay_list_workspaces/);
@@ -327,6 +333,33 @@ test("demo guide includes beginner Codex MCP setup and verification", async () =
   assert.equal(spawnSync("bash", ["-n", new URL("../INSTALL_RELAY_DEMO.command", import.meta.url).pathname]).status, 0);
 });
 
+test("Codex plugin bundles the Relay MCP connection and workspace workflow", async () => {
+  const [manifestText, mcpText, marketplaceText, skill, pluginReadme] = await Promise.all([
+    read("../plugins/relay-shared-workspace/.codex-plugin/plugin.json"),
+    read("../plugins/relay-shared-workspace/.mcp.json"),
+    read("../.agents/plugins/marketplace.json"),
+    read("../plugins/relay-shared-workspace/skills/relay-workspace/SKILL.md"),
+    read("../plugins/relay-shared-workspace/README.md"),
+  ]);
+  const manifest = JSON.parse(manifestText);
+  const mcp = JSON.parse(mcpText);
+  const marketplace = JSON.parse(marketplaceText);
+
+  assert.equal(manifest.name, "relay-shared-workspace");
+  assert.equal(manifest.mcpServers, "./.mcp.json");
+  assert.equal(manifest.interface.composerIcon, "./assets/relay-shared-workspace-icon.png");
+  assert.equal(manifest.interface.logo, "./assets/relay-shared-workspace-icon.png");
+  assert.equal(mcp.mcpServers.relay.type, "http");
+  assert.equal(mcp.mcpServers.relay.url, "https://relay-production-2026.opompm841218.chatgpt.site/api/mcp?member=Codex%20Plugin");
+  assert.equal(marketplace.name, "relay-build-week");
+  assert.equal(marketplace.plugins[0].source.path, "./plugins/relay-shared-workspace");
+  assert.match(skill, /Call `relay_preflight` first/);
+  assert.match(skill, /automatic `full_generation` with all three similarities at zero/);
+  assert.match(skill, /call `relay_submit_result`/);
+  assert.match(skill, /call no more tools/);
+  assert.match(pluginReadme, /need to run `codex mcp add`/);
+});
+
 test("production removes runtime demo bootstrap and requires identity", async () => {
   const [workspace, envExample, hosting, readme, layout, rootPage, workspacePage, stateRoute] = await Promise.all([
     read("../app/api/_lib/workspace.ts"),
@@ -348,6 +381,9 @@ test("production removes runtime demo bootstrap and requires identity", async ()
   assert.match(readme, /no demo seeds/);
   assert.match(rootPage, /requireChatGPTUser\("\/"\)/);
   assert.match(workspacePage, /requireChatGPTUser\(`\/\$\{encodeURIComponent\(decodedWorkspaceId\)\}`\)/);
+  assert.match(workspacePage, /import WorkspaceDashboardView from "\.\.\/workspace-dashboard"/);
+  assert.match(workspacePage, /<WorkspaceDashboardView initialWorkspaceId=\{decodedWorkspaceId\} \/>/);
+  assert.doesNotMatch(workspacePage, /import WorkspaceDashboard from "\.\.\/workspace-dashboard"/);
   assert.match(workspacePage, /initialWorkspaceId=\{decodedWorkspaceId\}/);
   assert.match(layout, /force-dynamic/);
   assert.match(stateRoute, /requireActor\(request\)/);

@@ -1,0 +1,20 @@
+{
+  "name": "relay-build-week",
+  "interface": {
+    "displayName": "Relay Build Week"
+  },
+  "plugins": [
+    {
+      "name": "relay-shared-workspace",
+      "source": {
+        "source": "local",
+        "path": "./plugins/relay-shared-workspace"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
