@@ -372,13 +372,17 @@ test("demo guide includes beginner Codex MCP setup and verification", async () =
   assert.equal(spawnSync("bash", ["-n", new URL("../INSTALL_RELAY_DEMO.command", import.meta.url).pathname]).status, 0);
 });
 
-test("Codex plugin bundles the Relay MCP connection and workspace workflow", async () => {
-  const [manifestText, mcpText, marketplaceText, skill, pluginReadme] = await Promise.all([
+test("Codex plugin bundles the Relay MCP connection, hosted-data contract, and shareable installer", async () => {
+  const [manifestText, mcpText, marketplaceText, skill, pluginReadme, rootReadme, installer, launcher, packager] = await Promise.all([
     read("../plugins/relay-shared-workspace/.codex-plugin/plugin.json"),
     read("../plugins/relay-shared-workspace/.mcp.json"),
     read("../.agents/plugins/marketplace.json"),
     read("../plugins/relay-shared-workspace/skills/relay-workspace/SKILL.md"),
     read("../plugins/relay-shared-workspace/README.md"),
+    read("../README.md"),
+    read("../scripts/install-relay-plugin.sh"),
+    read("../INSTALL_RELAY_PLUGIN.command"),
+    read("../scripts/package-relay-plugin.sh"),
   ]);
   const manifest = JSON.parse(manifestText);
   const mcp = JSON.parse(mcpText);
@@ -396,7 +400,22 @@ test("Codex plugin bundles the Relay MCP connection and workspace workflow", asy
   assert.match(skill, /automatic `full_generation` with all three similarities at zero/);
   assert.match(skill, /call `relay_submit_result`/);
   assert.match(skill, /call no more tools/);
-  assert.match(pluginReadme, /need to run `codex mcp add`/);
+  assert.match(skill, /user's Codex host owns all RAG and Full Generation inference/);
+  assert.match(skill, /do not ask the user to run `codex mcp add`/);
+  assert.match(pluginReadme, /使用者自己的 Codex host model/);
+  assert.match(pluginReadme, /codex plugin marketplace add/);
+  assert.match(pluginReadme, /codex plugin add relay-shared-workspace@relay-build-week/);
+  assert.match(pluginReadme, /使用者的 Codex 模型 credential 不會傳送給 Relay/);
+  assert.match(rootReadme, /Produce the standalone package/);
+  assert.match(installer, /codex plugin marketplace add "\$ROOT_DIR"/);
+  assert.match(installer, /codex plugin add "\$PLUGIN_NAME@\$MARKETPLACE_NAME"/);
+  assert.match(installer, /"method":"initialize"/);
+  assert.match(packager, /plugins\/relay-shared-workspace/);
+  assert.match(packager, /\.agents\/plugins\/marketplace\.json/);
+  assert.match(launcher, /install-relay-plugin\.sh/);
+  assert.equal(spawnSync("bash", ["-n", new URL("../scripts/install-relay-plugin.sh", import.meta.url).pathname]).status, 0);
+  assert.equal(spawnSync("bash", ["-n", new URL("../scripts/package-relay-plugin.sh", import.meta.url).pathname]).status, 0);
+  assert.equal(spawnSync("bash", ["-n", new URL("../INSTALL_RELAY_PLUGIN.command", import.meta.url).pathname]).status, 0);
 });
 
 test("production removes runtime demo bootstrap and requires identity", async () => {

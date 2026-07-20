@@ -4,17 +4,48 @@ Relay is a shared AI workspace and MCP gateway for teams and their personal agen
 
 The production edition deliberately has no demo seeds, fabricated model answers, anonymous hosted fallback, or shared demo database. It requires migrated D1 storage and authenticated requests. For MCP clients, Relay is now a routing and shared-memory layer rather than an LLM proxy: Semantic Cache returns a stored answer, while RAG and Full Generation return an agent handoff so Codex, ChatGPT, or an IDE agent performs the generation with its own host model.
 
-## One-click Codex plugin
+## Shareable Codex plugin
 
-The repo now includes the installable **Relay Shared Workspace** plugin at `plugins/relay-shared-workspace` and exposes it through `.agents/plugins/marketplace.json`. Installing the plugin bundles both the production remote MCP connection and the Relay routing workflow, so users no longer need to run `codex mcp add`, edit Codex configuration, provide an API key, or add a Relay member token.
+Other users can install **Relay Shared Workspace** while continuing to use this deployment's D1, R2, document embeddings, Semantic Cache and Dashboard. Relay does not need or receive their model API key: RAG and Full Generation are returned as agent handoffs and completed by the model already available in each user's Codex host. The final result is saved back through `relay_submit_result`.
 
-In the Codex desktop app, open this repository, restart once, then choose **Plugins → Relay Build Week → Relay Shared Workspace → Install**. Start a new task with:
+The complete distributable surface is included in this repository:
+
+```text
+.agents/plugins/marketplace.json
+plugins/relay-shared-workspace/
+├── .codex-plugin/plugin.json
+├── .mcp.json
+├── assets/relay-shared-workspace-icon.png
+├── skills/relay-workspace/SKILL.md
+└── README.md
+INSTALL_RELAY_PLUGIN.command
+scripts/install-relay-plugin.sh
+scripts/package-relay-plugin.sh
+```
+
+### Install from an unpacked copy
+
+The simplest Codex App flow is to open this repository/package root, restart the desktop app, and choose **Plugins → Relay Build Week → Relay Shared Workspace → Install**. Then start a new task with:
 
 ```text
 Set up Relay and show available workspaces.
 ```
 
-Codex will list existing Workspaces, select or create one, and use the same bundled MCP connection for all later Workspace activity. See `plugins/relay-shared-workspace/README.md` for the short installation guide. Codex itself remains a prerequisite because a plugin cannot install its own host application.
+macOS/Linux users can also run:
+
+```bash
+./INSTALL_RELAY_PLUGIN.command
+```
+
+The installer verifies every required Plugin file, tests the hosted MCP handshake, registers this repository as a Codex marketplace, and installs `relay-shared-workspace@relay-build-week`. It does not request an OpenAI key, Gemini key, Cloudflare credential, or Relay member token.
+
+### Produce the standalone package
+
+```bash
+./scripts/package-relay-plugin.sh
+```
+
+The resulting archive contains only the Plugin, marketplace entry, icon, skill, installer and user guide; recipients do not need the Dashboard source tree. See [the Plugin installation guide](./plugins/relay-shared-workspace/README.md) for App, CLI, workspace-share, verification, update, removal, data-sharing and troubleshooting steps.
 
 ## Product architecture
 

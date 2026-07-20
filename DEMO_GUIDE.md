@@ -46,7 +46,7 @@
 - **Shared knowledge** 只顯示已完成並保存的 RAG／Full Generation 回答。Semantic Cache 重用、聊天訊息、上傳來源與尚未完成的 handoff 不會混入。
 - 需要重新錄 Demo 時，可在 **Shared knowledge → Reset knowledge** 輸入畫面顯示的 Workspace ID，再輸入 `RESET SHARED KNOWLEDGE`。系統會清除共享知識、embedding vectors、Semantic Cache 與上傳來源，但保留共同聊天及效能統計。
 
-Codex 只需連接一次 shared-workspace MCP Server。每個 Workspace tool 都帶 `workspaceId`，Server 以它選定獨立的 D1／R2 partition；memory、embeddings、chat、cache 與 analytics 不會跨 Workspace。Dashboard 目前顯示預設的 `RoamTogether`，新增 Workspace 主要透過 MCP Agent 操作。上傳到 R2 的檔案目前只保存 bytes 與 metadata，尚未自動解析及建立文件 chunks。
+Codex 只需連接一次 shared-workspace MCP Server。每個 Workspace tool 都帶 `workspaceId`，Server 以它選定獨立的 D1／R2 partition；memory、embeddings、chat、cache 與 analytics 不會跨 Workspace。Dashboard 目前顯示預設的 `RoamTogether`，新增 Workspace 主要透過 MCP Agent 操作。上傳到 R2 的文件會自動解析、建立 chunks 與 embeddings，並納入後續 RAG retrieval；原始 bytes 與處理 metadata 仍完整保留。
 
 ## 2. Demo 前準備
 
