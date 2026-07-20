@@ -31,7 +31,7 @@ The Web API and MCP server share routing and freshness rules in `app/api/_lib/re
 
 The stateless Streamable HTTP-compatible endpoint is `https://<relay-host>/api/mcp`. It exposes:
 
-- `relay_create_workspace` — creates a new isolated Workspace partition without creating another MCP connection.
+- `relay_create_workspace` — creates a new isolated Workspace partition without creating another MCP connection and returns its shareable Dashboard URL.
 - `relay_list_workspaces` — lists the Workspace IDs available through the shared MCP server.
 - `relay_preflight` — performs semantic retrieval, TTL/version validation, input-token estimation, and previews every prompt with Hybrid, raw embedding, and normalized lexical similarity.
 - `relay_confirm_route` — records the member's explicit RAG or Full Generation choice and returns a new executable preflight.
@@ -45,6 +45,8 @@ The stateless Streamable HTTP-compatible endpoint is `https://<relay-host>/api/m
 Resources are available at `relay://workspace/<workspace-id>/{summary,memory,activity,savings}`. `RoamTogether` is the default Workspace name and ID. A client registers the MCP server once, for example `/api/mcp?member=Alice`. It then passes `workspaceId` to each Workspace tool; creating or switching a Workspace never requires another Codex MCP configuration. The Sites dispatch access mode must be `public` so non-browser MCP clients reach the Worker instead of receiving the Sign in with ChatGPT HTML page. The root layout still requires ChatGPT sign-in for the Dashboard, and browser data/write routes enforce authenticated-user headers. MCP calls are recorded in `mcp_events`. Because Streamable HTTP is stateless, the Dashboard defines a connected agent as an actor/client pair with MCP activity inside `RELAY_AGENT_ONLINE_WINDOW_SECONDS` and refreshes that view every ten seconds.
 
 Workspace selection is tool-call scoped with `AsyncLocalStorage`: each tool's `workspaceId` resolves a row from the D1 `workspaces` registry, and every downstream memory, embedding, cache, chat and analytics query uses that Workspace ID. This prevents concurrent calls for different Workspaces—even in one JSON-RPC batch—from leaking state. Any connected agent may call `relay_create_workspace({ name, workspaceId? })` and immediately use the returned ID through the same MCP connection.
+
+Each Workspace also has a signed-in Dashboard route at `https://<relay-host>/<workspace-id>`. The browser app appends that ID to every API request, and the API resolves the same request-scoped Workspace context used by MCP. For example, `RoamTogether` is available at `/RoamTogether`; a newly created `ProductLaunch` Workspace immediately receives `/ProductLaunch` in `relay_create_workspace.uiUrl`.
 
 The Dashboard's Shared Knowledge view is intentionally curated: it only includes persisted answers whose routing event proves they were produced through RAG or Full Generation. Semantic Cache reuse, chat, uploads, source records, handoff events, and seeds do not appear as generated team knowledge.
 
@@ -78,7 +80,7 @@ flowchart LR
 
 ## Production safeguards
 
-- The Sites project is public at the dispatch layer because Codex CLI cannot complete the Dashboard's browser SIWC redirect during MCP initialization. `app/layout.tsx` protects the Dashboard with `requireChatGPTUser`, while browser APIs still call `requireActor`.
+- The Sites project is public at the dispatch layer because Codex CLI cannot complete the Dashboard's browser SIWC redirect during MCP initialization. `app/page.tsx` and `app/[workspaceId]/page.tsx` protect the Dashboard with `requireChatGPTUser` while preserving the requested Workspace URL; browser APIs still call `requireActor`.
 - The Hackathon MCP endpoint deliberately accepts the displayed Workspace ID as its join code; this is convenient for a demo but is not a production authorization boundary.
 - Token estimates expire, are bound to the member and exact request, and are atomically single-use.
 - Stale, transactional, refresh-required, expired, or superseded records cannot be returned by Semantic Cache.

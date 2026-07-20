@@ -1,17 +1,17 @@
 import {
   classifyDefenseRoute,
-  errorResponse,
   findBestMatch,
   relativeTime,
   requireActor,
   resolveApiKey,
   routeThresholds,
   validateQuestion,
+  withRequestedWorkspaceResponse,
   type BillingMode,
 } from "../../_lib/workspace";
 
 export async function POST(request: Request) {
-  try {
+  return withRequestedWorkspaceResponse(request, "Unable to check shared memory.", async () => {
     requireActor(request);
     const body = await request.json() as { question?: string; billingMode?: BillingMode; personalApiKey?: string };
     const question = validateQuestion(body.question);
@@ -51,7 +51,5 @@ export async function POST(request: Request) {
         staleReason: match.freshness.reason,
       },
     });
-  } catch (error) {
-    return errorResponse(error, "Unable to check shared memory.");
-  }
+  });
 }

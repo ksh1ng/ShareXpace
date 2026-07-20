@@ -1,7 +1,7 @@
-import { errorResponse, getWorkspaceState, relativeTime, requireActor } from "../_lib/workspace";
+import { getWorkspaceState, relativeTime, requireActor, withRequestedWorkspaceResponse } from "../_lib/workspace";
 
 export async function GET(request: Request) {
-  try {
+  return withRequestedWorkspaceResponse(request, "Unable to load workspace.", async () => {
     requireActor(request);
     const state = await getWorkspaceState();
     return Response.json({
@@ -39,7 +39,5 @@ export async function GET(request: Request) {
       workspaceName: state.workspaceName,
       workspace: state.workspace,
     });
-  } catch (error) {
-    return errorResponse(error, "Unable to load workspace.");
-  }
+  });
 }

@@ -7,6 +7,7 @@
 - Web Dashboard 與多個 MCP Client 共用同一個 Workspace。
 - Codex、ChatGPT、IDE Agent 或其他 MCP Client 可連接 `/api/mcp`。
 - Agent 可呼叫 `relay_create_workspace` 建立新的 Workspace，並在同一條 MCP 連線立即使用。
+- 建立結果會回傳對應的 Dashboard URL，例如 `https://relay-production-2026.opompm841218.chatgpt.site/ProductLaunch`。
 - `relay_list_workspaces` 可列出所有可用的 Workspace name／ID。
 - 每次 Agent 工作前必須先執行 `relay_preflight`。
 - 全新問題走 Full Generation。
@@ -304,7 +305,7 @@ Embedding provider: gemini
 請使用 Relay MCP 的 relay_create_workspace 建立一個新的共享 Workspace：
 name: ProductLaunch
 workspaceId: ProductLaunch
-建立後只回報 Workspace name 與 Workspace ID。
+建立後只回報 Workspace name、Workspace ID 與 Workspace UI URL。
 ```
 
 Codex 會呼叫 `relay_create_workspace`，Relay 回傳：
@@ -312,6 +313,7 @@ Codex 會呼叫 `relay_create_workspace`，Relay 回傳：
 ```text
 Workspace created: ProductLaunch
 Workspace ID: ProductLaunch
+Workspace UI: https://relay-production-2026.opompm841218.chatgpt.site/ProductLaunch
 Keep using this shared-workspace MCP connection.
 Use workspaceId "ProductLaunch" in the next Relay tool.
 ```
@@ -324,6 +326,8 @@ Use workspaceId "ProductLaunch" in the next Relay tool.
 ```
 
 `relay_get_workspace` 應回傳 `ProductLaunch`。新 Workspace 的 knowledge、embeddings、chat、cache 與 analytics 都是空白且獨立的；切回 `RoamTogether` 只需在下一個 tool call 改回該 `workspaceId`。
+
+使用瀏覽器打開 Relay 回傳的 Workspace UI URL。登入 ChatGPT 後會直接進入該 Workspace Dashboard；Dashboard 的 chat、knowledge、embeddings、route logs、token analytics 與 connected agents 都只讀取 URL 所指定的 Workspace。
 
 ### 3.7 同一台 Mac 模擬 Alice 與 Bob
 

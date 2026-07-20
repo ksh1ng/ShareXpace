@@ -1,4 +1,4 @@
-import { bumpKnowledgeVersion, ensureWorkspace, errorResponse, requireActor, runtimeEnv, workspaceId } from "../../_lib/workspace";
+import { bumpKnowledgeVersion, ensureWorkspace, requireActor, runtimeEnv, withRequestedWorkspaceResponse, workspaceId } from "../../_lib/workspace";
 
 const RESET_PHRASE = "RESET SHARED KNOWLEDGE";
 
@@ -11,7 +11,7 @@ async function countRows(table: "memory_records" | "record_embeddings" | "worksp
 }
 
 export async function POST(request: Request) {
-  try {
+  return withRequestedWorkspaceResponse(request, "Shared knowledge could not be reset.", async () => {
     const actor = requireActor(request);
     await ensureWorkspace();
     if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
@@ -51,7 +51,5 @@ export async function POST(request: Request) {
       knowledgeVersion,
       retained: ["chat_messages", "routing_events", "model_calls", "mcp_events"],
     });
-  } catch (error) {
-    return errorResponse(error, "Shared knowledge could not be reset.");
-  }
+  });
 }

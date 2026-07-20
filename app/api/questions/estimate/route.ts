@@ -1,9 +1,9 @@
 import type { BillingMode } from "../../_lib/model";
 import { relayPreflight } from "../../_lib/relay-service";
-import { errorResponse, requireActor, type TokenOperation } from "../../_lib/workspace";
+import { requireActor, withRequestedWorkspaceResponse, type TokenOperation } from "../../_lib/workspace";
 
 export async function POST(request: Request) {
-  try {
+  return withRequestedWorkspaceResponse(request, "Unable to estimate tokens.", async () => {
     const actor = requireActor(request);
     const body = await request.json() as {
       question?: string;
@@ -24,7 +24,5 @@ export async function POST(request: Request) {
       recordId: body.recordId,
     });
     return Response.json(result, { status: 201 });
-  } catch (error) {
-    return errorResponse(error, "Unable to estimate tokens.");
-  }
+  });
 }
