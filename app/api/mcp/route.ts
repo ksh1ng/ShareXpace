@@ -41,6 +41,13 @@ const workspaceIdSchema = {
   description: "Workspace ID returned by relay_create_workspace or relay_list_workspaces.",
 };
 
+const memberNameSchema = {
+  type: "string",
+  minLength: 1,
+  maxLength: 80,
+  description: "Display name chosen during ShareXpace setup. Pass the same value to every Relay tool call in this task.",
+};
+
 const tools = [
   {
     name: "relay_create_workspace",
@@ -51,6 +58,7 @@ const tools = [
       properties: {
         name: { type: "string", minLength: 1, maxLength: 80, description: "Human-readable Workspace name." },
         workspaceId: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$", description: "Optional stable ID. If omitted, Relay creates one from the name." },
+        memberName: memberNameSchema,
       },
       required: ["name"],
       additionalProperties: false,
@@ -61,7 +69,7 @@ const tools = [
     name: "relay_list_workspaces",
     title: "List shared Workspaces",
     description: "Lists Workspace names and IDs available through this single shared-workspace MCP server.",
-    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    inputSchema: { type: "object", properties: { memberName: memberNameSchema }, additionalProperties: false },
     annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
   },
   {
@@ -74,6 +82,7 @@ const tools = [
         workspaceId: workspaceIdSchema,
         question: { type: "string", description: "The exact workspace question or task." },
         operation: { type: "string", enum: ["auto", "generate_with_team_knowledge"], default: "auto", description: "Accepted for backward compatibility. MCP preflight always performs an automatic route preview before execution." },
+        memberName: memberNameSchema,
       },
       required: ["workspaceId", "question"],
       additionalProperties: false,
@@ -92,6 +101,7 @@ const tools = [
         question: { type: "string", description: "Must exactly match the preview question." },
         selectedRoute: { type: "string", enum: ["rag", "full_generation"] },
         confirmedByUser: { type: "boolean", const: true },
+        memberName: memberNameSchema,
       },
       required: ["workspaceId", "previewId", "question", "selectedRoute", "confirmedByUser"],
       additionalProperties: false,
@@ -111,6 +121,7 @@ const tools = [
         agent: { type: "string", description: "Agent name shown in shared activity." },
         operation: { type: "string", enum: ["auto", "generate_with_team_knowledge"], default: "auto", description: "Normally match the preflight operation. A fresh exact-match preflight is normalized to auto and reused from Semantic Cache." },
         knowledgeType: knowledgeTypeSchema,
+        memberName: memberNameSchema,
       },
       required: ["workspaceId", "preflightId", "question"],
       additionalProperties: false,
@@ -134,6 +145,7 @@ const tools = [
         inputTokens: { type: "integer", minimum: 0 },
         outputTokens: { type: "integer", minimum: 0 },
         cachedInputTokens: { type: "integer", minimum: 0 },
+        memberName: memberNameSchema,
       },
       required: ["workspaceId", "preflightId", "question", "answer"],
       additionalProperties: false,
@@ -146,7 +158,7 @@ const tools = [
     description: "Searches exact and semantically similar team answers, returning freshness and source metadata without generating a new answer.",
     inputSchema: {
       type: "object",
-      properties: { workspaceId: workspaceIdSchema, question: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 10, default: 5 } },
+      properties: { workspaceId: workspaceIdSchema, question: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 10, default: 5 }, memberName: memberNameSchema },
       required: ["workspaceId", "question"],
       additionalProperties: false,
     },
@@ -158,7 +170,7 @@ const tools = [
     description: "Creates a required preflight for refreshing a stale sourced record. Pass the returned preflight ID to relay_refresh.",
     inputSchema: {
       type: "object",
-      properties: { workspaceId: workspaceIdSchema, recordId: { type: "string" } },
+      properties: { workspaceId: workspaceIdSchema, recordId: { type: "string" }, memberName: memberNameSchema },
       required: ["workspaceId", "recordId"],
       additionalProperties: false,
     },
@@ -175,6 +187,7 @@ const tools = [
         recordId: { type: "string", description: "Record ID returned by the Semantic Cache result." },
         question: { type: "string", description: "The question to revise, normally unchanged from the cached request." },
         confirmedByUser: { type: "boolean", const: true, description: "Must be true only after the member explicitly chose RAG update in a later turn." },
+        memberName: memberNameSchema,
       },
       required: ["workspaceId", "recordId", "question", "confirmedByUser"],
       additionalProperties: false,
@@ -187,7 +200,7 @@ const tools = [
     description: "Refreshes a sourced record after relay_refresh_preflight, preserving the old version and marking it superseded.",
     inputSchema: {
       type: "object",
-      properties: { workspaceId: workspaceIdSchema, preflightId: { type: "string" }, recordId: { type: "string" }, agent: { type: "string" } },
+      properties: { workspaceId: workspaceIdSchema, preflightId: { type: "string" }, recordId: { type: "string" }, agent: { type: "string" }, memberName: memberNameSchema },
       required: ["workspaceId", "preflightId", "recordId"],
       additionalProperties: false,
     },
@@ -204,6 +217,7 @@ const tools = [
         content: { type: "string", maxLength: 20000 },
         agent: { type: "string" },
         kind: { type: "string", enum: ["discussion", "agent"], default: "agent" },
+        memberName: memberNameSchema,
       },
       required: ["workspaceId", "content"],
       additionalProperties: false,
@@ -214,13 +228,20 @@ const tools = [
     name: "relay_get_workspace",
     title: "Read workspace status",
     description: "Returns current route metrics, token savings, prompt-cache usage, connected MCP members, and recent non-stale knowledge.",
-    inputSchema: { type: "object", properties: { workspaceId: workspaceIdSchema }, required: ["workspaceId"], additionalProperties: false },
+    inputSchema: { type: "object", properties: { workspaceId: workspaceIdSchema, memberName: memberNameSchema }, required: ["workspaceId"], additionalProperties: false },
     annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
   },
 ];
 
 function clientName(request: Request) {
   return (request.headers.get("mcp-client-name") || request.headers.get("user-agent") || "Unknown MCP client").slice(0, 120);
+}
+
+function toolActor(fallbackActor: string, args: Record<string, unknown>) {
+  if (typeof args.memberName !== "string") return fallbackActor;
+  const memberName = args.memberName.trim().replace(/\s+/g, " ");
+  if (!memberName || memberName.length > 80) throw new ApiError("memberName must be between 1 and 80 characters.", 400, "member_name_invalid");
+  return memberName;
 }
 function result(id: JsonRpcRequest["id"], value: unknown) {
   return { jsonrpc: "2.0", id: id ?? null, result: value };
@@ -462,7 +483,7 @@ async function handleRpc(request: Request, actor: string, call: JsonRpcRequest) 
       protocolVersion: PROTOCOL_VERSION,
       capabilities: { tools: { listChanged: false }, resources: { subscribe: false, listChanged: false } },
       serverInfo: { name: "relay-shared-workspace", title: "Relay Shared AI Workspace", version: "0.4.0" },
-      instructions: "This is one shared-workspace MCP server for every Workspace. Never ask the member to add another MCP connection. Use relay_create_workspace to create a Workspace and relay_list_workspaces to find IDs. Pass workspaceId to every workspace tool. For every workspace prompt, call relay_preflight and show Hybrid, raw embedding, and normalized lexical similarity. If Semantic Cache, call relay_execute to display the answer, then ask Accept or RAG update and wait. If relay_preflight reports autoRouted Full Generation because all three scores are 0%, do not ask for route choice: call relay_execute immediately, let the host agent generate, then call relay_submit_result. Only a nonzero related match requires asking RAG or Full Generation, waiting, and then calling relay_confirm_route. Relay never calls the generation model.",
+      instructions: "This is one shared-workspace MCP server for every Workspace. Before the first Relay tool call, ask what name the member wants to use in ShareXpace, wait for the answer, and pass it unchanged as memberName to every later Relay tool call. Never ask the member to add another MCP connection. Use relay_create_workspace to create a Workspace and relay_list_workspaces to find IDs. Pass workspaceId to every workspace tool. For every workspace prompt, call relay_preflight and show Hybrid, raw embedding, and normalized lexical similarity. If Semantic Cache, call relay_execute to display the answer, then ask Accept or RAG update and wait. If relay_preflight reports autoRouted Full Generation because all three scores are 0%, do not ask for route choice: call relay_execute immediately, let the host agent generate, then call relay_submit_result. Only a nonzero related match requires asking RAG or Full Generation, waiting, and then calling relay_confirm_route. Relay never calls the generation model.",
     });
   }
   if (call.method === "ping") return result(id, {});
@@ -489,15 +510,16 @@ async function handleRpc(request: Request, actor: string, call: JsonRpcRequest) 
     const name = typeof call.params?.name === "string" ? call.params.name : "";
     const args = call.params?.arguments && typeof call.params.arguments === "object" ? call.params.arguments as Record<string, unknown> : {};
     try {
+      const memberActor = toolActor(actor, args);
       if (name === "relay_list_workspaces") {
-        const value = await callTool(actor, name, args);
+        const value = await callTool(memberActor, name, args);
         return result(id, toolResult(value, toolMessage(name, value)));
       }
       if (name === "relay_create_workspace") {
-        const created = await callTool(actor, name, args) as { id: string; uiPath: string };
+        const created = await callTool(memberActor, name, args) as { id: string; uiPath: string };
         const value = { ...created, uiUrl: `${new URL(request.url).origin}${created.uiPath}` };
         const workspace = await getWorkspace(created.id);
-        if (workspace) await withWorkspaceContext(workspace, () => recordMcpEvent({ actor, clientName: clientName(request), method, toolName: name, success: true }));
+        if (workspace) await withWorkspaceContext(workspace, () => recordMcpEvent({ actor: memberActor, clientName: clientName(request), method, toolName: name, success: true }));
         return result(id, toolResult(value, toolMessage(name, value)));
       }
       const requestedWorkspaceId = typeof args.workspaceId === "string" ? args.workspaceId.trim() : "";
@@ -506,12 +528,12 @@ async function handleRpc(request: Request, actor: string, call: JsonRpcRequest) 
       if (!workspace) throw new ApiError("Workspace not found.", 404, "workspace_not_found");
       return await withWorkspaceContext(workspace, async () => {
         try {
-          const value = await callTool(actor, name, args);
+          const value = await callTool(memberActor, name, args);
           const route = value && typeof value === "object" && "route" in value ? (value as { route?: "semantic_cache" | "rag" | "full_generation" }).route : null;
-          await recordMcpEvent({ actor, clientName: clientName(request), method, toolName: name, success: true, route });
+          await recordMcpEvent({ actor: memberActor, clientName: clientName(request), method, toolName: name, success: true, route });
           return result(id, toolResult(value, toolMessage(name, value)));
         } catch (error) {
-          await recordMcpEvent({ actor, clientName: clientName(request), method, toolName: name, success: false });
+          await recordMcpEvent({ actor: memberActor, clientName: clientName(request), method, toolName: name, success: false });
           throw error;
         }
       });

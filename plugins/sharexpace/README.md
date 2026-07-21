@@ -70,7 +70,10 @@ relay-plugin-package/
    Set up Relay and show available workspaces.
    ```
 
-7. 選擇 `RoamTogether`，或請 Codex 呼叫 `relay_create_workspace` 建立新 Workspace。
+7. Codex 會先詢問你希望在 ShareXpace 使用的顯示名稱，例如 `Alice`。回答後，該名稱會用於 Workspace activity、chat 與 Connected Agents。
+8. 選擇 `RoamTogether`，或請 Codex 呼叫 `relay_create_workspace` 建立新 Workspace。
+
+顯示名稱只需在目前 task 首次 setup 時提供一次；Codex 會在該 task 的後續 Relay tool calls 持續帶入相同的 `memberName`。它不是密碼或 API key。
 
 Dashboard：<https://relay-production-2026.opompm841218.chatgpt.site>
 
@@ -124,6 +127,12 @@ codex
 Set up Relay and show available workspaces.
 Use workspaceId "RoamTogether" and report its Dashboard URL,
 embedding provider, route counts, and estimated tokens saved.
+```
+
+Codex 會先暫停並詢問顯示名稱。輸入名稱後才會呼叫 `relay_list_workspaces`，例如：
+
+```text
+Alice
 ```
 
 ## Owner 分享 Plugin 的方式

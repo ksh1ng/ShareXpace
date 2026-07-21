@@ -373,7 +373,7 @@ test("demo guide includes beginner Codex MCP setup and verification", async () =
 });
 
 test("ShareXpace plugin bundles the Relay MCP connection, hosted-data contract, and shareable installer", async () => {
-  const [manifestText, mcpText, marketplaceText, skill, pluginReadme, rootReadme, installer, launcher, packager] = await Promise.all([
+  const [manifestText, mcpText, marketplaceText, skill, pluginReadme, rootReadme, installer, launcher, packager, mcpRoute] = await Promise.all([
     read("../plugins/sharexpace/.codex-plugin/plugin.json"),
     read("../plugins/sharexpace/.mcp.json"),
     read("../.agents/plugins/marketplace.json"),
@@ -383,6 +383,7 @@ test("ShareXpace plugin bundles the Relay MCP connection, hosted-data contract, 
     read("../scripts/install-sharexpace-plugin.sh"),
     read("../INSTALL_SHAREXPACE_PLUGIN.command"),
     read("../scripts/package-sharexpace-plugin.sh"),
+    read("../app/api/mcp/route.ts"),
   ]);
   const manifest = JSON.parse(manifestText);
   const mcp = JSON.parse(mcpText);
@@ -402,6 +403,11 @@ test("ShareXpace plugin bundles the Relay MCP connection, hosted-data contract, 
   assert.match(skill, /call no more tools/);
   assert.match(skill, /user's Codex host owns all RAG and Full Generation inference/);
   assert.match(skill, /do not ask the user to run `codex mcp add`/);
+  assert.match(skill, /What name would you like to use in ShareXpace/);
+  assert.match(skill, /pass it unchanged to every Relay tool call/);
+  assert.match(mcpRoute, /memberNameSchema/);
+  assert.match(mcpRoute, /const memberActor = toolActor\(actor, args\)/);
+  assert.match(mcpRoute, /Before the first Relay tool call, ask what name the member wants to use in ShareXpace/);
   assert.match(pluginReadme, /使用者自己的 Codex host model/);
   assert.match(pluginReadme, /codex plugin marketplace add/);
   assert.match(pluginReadme, /codex plugin add sharexpace@sharexpace/);
