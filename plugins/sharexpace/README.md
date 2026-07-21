@@ -1,4 +1,4 @@
-# ShareXspace Codex Plugin
+# ShareXpace Codex Plugin
 
 其他使用者可以直接使用這個 Plugin，不需要部署自己的 Relay，也不需要取得 Relay Owner 的 Cloudflare 或 Gemini credentials。
 
@@ -23,19 +23,19 @@ relay-plugin-package/
 │   └── plugins/
 │       └── marketplace.json
 ├── plugins/
-│   └── sharexspace/
+│   └── sharexpace/
 │       ├── .codex-plugin/
 │       │   └── plugin.json
 │       ├── .mcp.json
 │       ├── README.md
 │       ├── assets/
-│       │   └── sharexspace-icon.png
+│       │   └── sharexpace-icon.png
 │       └── skills/
-│           └── sharexspace-workspace/
+│           └── sharexpace-workspace/
 │               └── SKILL.md
 ├── scripts/
-│   └── install-sharexspace-plugin.sh
-└── INSTALL_SHAREXSPACE_PLUGIN.command
+│   └── install-sharexpace-plugin.sh
+└── INSTALL_SHAREXPACE_PLUGIN.command
 ```
 
 其中：
@@ -55,14 +55,14 @@ relay-plugin-package/
 
 1. 安裝 ChatGPT desktop app。
 2. 登入可使用 Codex 的 ChatGPT 帳號。
-3. 取得並解壓縮 ShareXspace plugin package，或取得包含本目錄與 `.agents/plugins/marketplace.json` 的 repository。
+3. 取得並解壓縮 ShareXpace plugin package，或取得包含本目錄與 `.agents/plugins/marketplace.json` 的 repository。
 
 ### 安裝步驟
 
 1. 在 Codex App 開啟解壓縮後的 package/repository 根目錄。
 2. 完整退出並重新啟動 ChatGPT desktop app，讓 Codex 讀取 repo marketplace。
-3. 開啟 **Codex → Plugins → ShareXspace**。
-4. 選擇 **ShareXspace**，按 **Install**。
+3. 開啟 **Codex → Plugins → ShareXpace**。
+4. 選擇 **ShareXpace**，按 **Install**。
 5. 建立新的 Codex task。安裝前已開啟的 task 不會載入新的 skill 與 MCP tools。
 6. 輸入：
 
@@ -79,13 +79,13 @@ Dashboard：<https://relay-production-2026.opompm841218.chatgpt.site>
 在解壓縮後的 package 根目錄執行：
 
 ```bash
-./INSTALL_SHAREXSPACE_PLUGIN.command
+./INSTALL_SHAREXPACE_PLUGIN.command
 ```
 
 若 macOS 阻止雙擊，改用：
 
 ```bash
-bash scripts/install-sharexspace-plugin.sh
+bash scripts/install-sharexpace-plugin.sh
 ```
 
 installer 會：
@@ -94,12 +94,12 @@ installer 會：
 2. 驗證 JSON manifest 與 marketplace。
 3. 對 hosted MCP server 執行 `initialize` handshake。
 4. 以 `codex plugin marketplace add` 註冊 package 根目錄。
-5. 安裝 `sharexspace@sharexspace`。
+5. 安裝 `sharexpace@sharexpace`。
 
 只檢查、不安裝：
 
 ```bash
-bash scripts/install-sharexspace-plugin.sh --check-only
+bash scripts/install-sharexpace-plugin.sh --check-only
 ```
 
 ## 方法三：CLI 手動安裝
@@ -108,7 +108,7 @@ bash scripts/install-sharexspace-plugin.sh --check-only
 
 ```bash
 codex plugin marketplace add "$(pwd)"
-codex plugin add sharexspace@sharexspace
+codex plugin add sharexpace@sharexpace
 codex plugin list
 ```
 
@@ -133,10 +133,10 @@ embedding provider, route counts, and estimated tokens saved.
 Owner 可在完整 repository 執行：
 
 ```bash
-./scripts/package-sharexspace-plugin.sh
+./scripts/package-sharexpace-plugin.sh
 ```
 
-把產生的 `.tar.gz` 傳給使用者。解壓縮後可直接執行 `INSTALL_SHAREXSPACE_PLUGIN.command`，不需要整個 Dashboard source code。
+把產生的 `.tar.gz` 傳給使用者。解壓縮後可直接執行 `INSTALL_SHAREXPACE_PLUGIN.command`，不需要整個 Dashboard source code。
 
 ### 透過 ChatGPT Workspace 分享
 
@@ -180,7 +180,7 @@ Do not rewrite the message.
 
 ```bash
 codex plugin marketplace upgrade relay-build-week
-codex plugin add sharexspace@sharexspace
+codex plugin add sharexpace@sharexpace
 ```
 
 更新或首次安裝後都要建立新的 Codex task/session。
@@ -188,7 +188,7 @@ codex plugin add sharexspace@sharexspace
 移除：
 
 ```bash
-codex plugin remove sharexspace@sharexspace
+codex plugin remove sharexpace@sharexpace
 codex plugin marketplace remove relay-build-week
 ```
 

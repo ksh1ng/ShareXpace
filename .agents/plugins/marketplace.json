@@ -1,14 +1,14 @@
 {
-  "name": "sharexspace",
+  "name": "sharexpace",
   "interface": {
-    "displayName": "ShareXspace"
+    "displayName": "ShareXpace"
   },
   "plugins": [
     {
-      "name": "sharexspace",
+      "name": "sharexpace",
       "source": {
         "source": "local",
-        "path": "./plugins/sharexspace"
+        "path": "./plugins/sharexpace"
       },
       "policy": {
         "installation": "AVAILABLE",

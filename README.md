@@ -6,26 +6,26 @@ The production edition deliberately has no demo seeds, fabricated model answers,
 
 ## Shareable Codex plugin
 
-Other users can install **ShareXspace** while continuing to use this deployment's D1, R2, document embeddings, Semantic Cache and Dashboard. ShareXspace does not need or receive their model API key: RAG and Full Generation are returned as agent handoffs and completed by the model already available in each user's Codex host. The final result is saved back through `relay_submit_result`.
+Other users can install **ShareXpace** while continuing to use this deployment's D1, R2, document embeddings, Semantic Cache and Dashboard. ShareXpace does not need or receive their model API key: RAG and Full Generation are returned as agent handoffs and completed by the model already available in each user's Codex host. The final result is saved back through `relay_submit_result`.
 
 The complete distributable surface is included in this repository:
 
 ```text
 .agents/plugins/marketplace.json
-plugins/sharexspace/
+plugins/sharexpace/
 ├── .codex-plugin/plugin.json
 ├── .mcp.json
-├── assets/sharexspace-icon.png
-├── skills/sharexspace-workspace/SKILL.md
+├── assets/sharexpace-icon.png
+├── skills/sharexpace-workspace/SKILL.md
 └── README.md
-INSTALL_SHAREXSPACE_PLUGIN.command
-scripts/install-sharexspace-plugin.sh
-scripts/package-sharexspace-plugin.sh
+INSTALL_SHAREXPACE_PLUGIN.command
+scripts/install-sharexpace-plugin.sh
+scripts/package-sharexpace-plugin.sh
 ```
 
 ### Install from an unpacked copy
 
-The simplest Codex App flow is to open this repository/package root, restart the desktop app, and choose **Plugins → ShareXspace → ShareXspace → Install**. Then start a new task with:
+The simplest Codex App flow is to open this repository/package root, restart the desktop app, and choose **Plugins → ShareXpace → ShareXpace → Install**. Then start a new task with:
 
 ```text
 Set up Relay and show available workspaces.
@@ -34,18 +34,18 @@ Set up Relay and show available workspaces.
 macOS/Linux users can also run:
 
 ```bash
-./INSTALL_SHAREXSPACE_PLUGIN.command
+./INSTALL_SHAREXPACE_PLUGIN.command
 ```
 
-The installer verifies every required Plugin file, tests the hosted MCP handshake, registers this repository as a Codex marketplace, and installs `sharexspace@sharexspace`. It does not request an OpenAI key, Gemini key, Cloudflare credential, or Relay member token.
+The installer verifies every required Plugin file, tests the hosted MCP handshake, registers this repository as a Codex marketplace, and installs `sharexpace@sharexpace`. It does not request an OpenAI key, Gemini key, Cloudflare credential, or Relay member token.
 
 ### Produce the standalone package
 
 ```bash
-./scripts/package-sharexspace-plugin.sh
+./scripts/package-sharexpace-plugin.sh
 ```
 
-The resulting archive contains only the Plugin, marketplace entry, icon, skill, installer and user guide; recipients do not need the Dashboard source tree. See [the Plugin installation guide](./plugins/sharexspace/README.md) for App, CLI, workspace-share, verification, update, removal, data-sharing and troubleshooting steps.
+The resulting archive contains only the Plugin, marketplace entry, icon, skill, installer and user guide; recipients do not need the Dashboard source tree. See [the Plugin installation guide](./plugins/sharexpace/README.md) for App, CLI, workspace-share, verification, update, removal, data-sharing and troubleshooting steps.
 
 ## Product architecture
 

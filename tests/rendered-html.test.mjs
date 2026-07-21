@@ -346,8 +346,8 @@ test("demo guide includes beginner Codex MCP setup and verification", async () =
   assert.match(guide, /## 3\. Codex App 展示版本/);
   assert.match(guide, /## 4\. Codex CLI 展示版本/);
   assert.match(guide, /Codex → Plugins/);
-  assert.match(guide, /ShareXspace/);
-  assert.match(guide, /用 `\/plugins` 從 \*\*ShareXspace\*\* 安裝 Plugin/);
+  assert.match(guide, /ShareXpace/);
+  assert.match(guide, /用 `\/plugins` 從 \*\*ShareXpace\*\* 安裝 Plugin/);
   assert.match(guide, /Plugin 安裝前已開啟的舊 task 不會自動載入/);
   assert.match(guide, /codex mcp add relay/);
   assert.match(guide, /api\/mcp\?member=Alice/);
@@ -372,30 +372,30 @@ test("demo guide includes beginner Codex MCP setup and verification", async () =
   assert.equal(spawnSync("bash", ["-n", new URL("../INSTALL_RELAY_DEMO.command", import.meta.url).pathname]).status, 0);
 });
 
-test("ShareXspace plugin bundles the Relay MCP connection, hosted-data contract, and shareable installer", async () => {
+test("ShareXpace plugin bundles the Relay MCP connection, hosted-data contract, and shareable installer", async () => {
   const [manifestText, mcpText, marketplaceText, skill, pluginReadme, rootReadme, installer, launcher, packager] = await Promise.all([
-    read("../plugins/sharexspace/.codex-plugin/plugin.json"),
-    read("../plugins/sharexspace/.mcp.json"),
+    read("../plugins/sharexpace/.codex-plugin/plugin.json"),
+    read("../plugins/sharexpace/.mcp.json"),
     read("../.agents/plugins/marketplace.json"),
-    read("../plugins/sharexspace/skills/sharexspace-workspace/SKILL.md"),
-    read("../plugins/sharexspace/README.md"),
+    read("../plugins/sharexpace/skills/sharexpace-workspace/SKILL.md"),
+    read("../plugins/sharexpace/README.md"),
     read("../README.md"),
-    read("../scripts/install-sharexspace-plugin.sh"),
-    read("../INSTALL_SHAREXSPACE_PLUGIN.command"),
-    read("../scripts/package-sharexspace-plugin.sh"),
+    read("../scripts/install-sharexpace-plugin.sh"),
+    read("../INSTALL_SHAREXPACE_PLUGIN.command"),
+    read("../scripts/package-sharexpace-plugin.sh"),
   ]);
   const manifest = JSON.parse(manifestText);
   const mcp = JSON.parse(mcpText);
   const marketplace = JSON.parse(marketplaceText);
 
-  assert.equal(manifest.name, "sharexspace");
+  assert.equal(manifest.name, "sharexpace");
   assert.equal(manifest.mcpServers, "./.mcp.json");
-  assert.equal(manifest.interface.composerIcon, "./assets/sharexspace-icon.png");
-  assert.equal(manifest.interface.logo, "./assets/sharexspace-icon.png");
+  assert.equal(manifest.interface.composerIcon, "./assets/sharexpace-icon.png");
+  assert.equal(manifest.interface.logo, "./assets/sharexpace-icon.png");
   assert.equal(mcp.mcpServers.relay.type, "http");
   assert.equal(mcp.mcpServers.relay.url, "https://relay-production-2026.opompm841218.chatgpt.site/api/mcp?member=Codex%20Plugin");
-  assert.equal(marketplace.name, "sharexspace");
-  assert.equal(marketplace.plugins[0].source.path, "./plugins/sharexspace");
+  assert.equal(marketplace.name, "sharexpace");
+  assert.equal(marketplace.plugins[0].source.path, "./plugins/sharexpace");
   assert.match(skill, /Call `relay_preflight` first/);
   assert.match(skill, /automatic `full_generation` with all three similarities at zero/);
   assert.match(skill, /call `relay_submit_result`/);
@@ -404,18 +404,18 @@ test("ShareXspace plugin bundles the Relay MCP connection, hosted-data contract,
   assert.match(skill, /do not ask the user to run `codex mcp add`/);
   assert.match(pluginReadme, /使用者自己的 Codex host model/);
   assert.match(pluginReadme, /codex plugin marketplace add/);
-  assert.match(pluginReadme, /codex plugin add sharexspace@sharexspace/);
+  assert.match(pluginReadme, /codex plugin add sharexpace@sharexpace/);
   assert.match(pluginReadme, /使用者的 Codex 模型 credential 不會傳送給 Relay/);
   assert.match(rootReadme, /Produce the standalone package/);
   assert.match(installer, /codex plugin marketplace add "\$ROOT_DIR"/);
   assert.match(installer, /codex plugin add "\$PLUGIN_NAME@\$MARKETPLACE_NAME"/);
   assert.match(installer, /"method":"initialize"/);
-  assert.match(packager, /plugins\/sharexspace/);
+  assert.match(packager, /plugins\/sharexpace/);
   assert.match(packager, /\.agents\/plugins\/marketplace\.json/);
-  assert.match(launcher, /install-sharexspace-plugin\.sh/);
-  assert.equal(spawnSync("bash", ["-n", new URL("../scripts/install-sharexspace-plugin.sh", import.meta.url).pathname]).status, 0);
-  assert.equal(spawnSync("bash", ["-n", new URL("../scripts/package-sharexspace-plugin.sh", import.meta.url).pathname]).status, 0);
-  assert.equal(spawnSync("bash", ["-n", new URL("../INSTALL_SHAREXSPACE_PLUGIN.command", import.meta.url).pathname]).status, 0);
+  assert.match(launcher, /install-sharexpace-plugin\.sh/);
+  assert.equal(spawnSync("bash", ["-n", new URL("../scripts/install-sharexpace-plugin.sh", import.meta.url).pathname]).status, 0);
+  assert.equal(spawnSync("bash", ["-n", new URL("../scripts/package-sharexpace-plugin.sh", import.meta.url).pathname]).status, 0);
+  assert.equal(spawnSync("bash", ["-n", new URL("../INSTALL_SHAREXPACE_PLUGIN.command", import.meta.url).pathname]).status, 0);
 });
 
 test("production removes runtime demo bootstrap and requires identity", async () => {

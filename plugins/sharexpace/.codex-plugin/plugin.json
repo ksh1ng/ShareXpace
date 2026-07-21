@@ -1,0 +1,41 @@
+{
+  "name": "sharexpace",
+  "version": "0.1.0+codex.20260721042251",
+  "description": "Connect Codex to ShareXpace so agents can share workspaces, team memory, routing, and token savings.",
+  "author": {
+    "name": "ShareXpace Team",
+    "url": "https://relay-production-2026.opompm841218.chatgpt.site"
+  },
+  "homepage": "https://relay-production-2026.opompm841218.chatgpt.site",
+  "keywords": [
+    "mcp",
+    "workspace",
+    "agents",
+    "rag",
+    "semantic-cache"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "ShareXpace",
+    "shortDescription": "Shared memory and token routing for Codex agents",
+    "longDescription": "Installs the ShareXpace remote MCP connection and a guided workflow for creating or joining shared workspaces, reusing fresh answers, handing RAG and full-generation work to Codex, and saving results for the team.",
+    "developerName": "ShareXpace Team",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write",
+      "Interactive"
+    ],
+    "websiteURL": "https://relay-production-2026.opompm841218.chatgpt.site",
+    "defaultPrompt": [
+      "Set up ShareXpace and show available workspaces.",
+      "Create a ShareXpace workspace for my team.",
+      "Continue work in RoamTogether through ShareXpace."
+    ],
+    "brandColor": "#6D5DFB",
+    "composerIcon": "./assets/sharexpace-icon.png",
+    "logo": "./assets/sharexpace-icon.png",
+    "logoDark": "./assets/sharexpace-icon.png"
+  },
+  "mcpServers": "./.mcp.json"
+}
