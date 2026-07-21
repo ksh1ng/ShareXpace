@@ -165,7 +165,7 @@ export default function WorkspaceDashboard({ initialWorkspaceId }: { initialWork
   const [chatBusy, setChatBusy] = useState(false);
   const [chatEstimate, setChatEstimate] = useState<{ question: string; estimate: TokenEstimate } | null>(null);
   const [pendingChatRun, setPendingChatRun] = useState<{ sourceMessageId: string; instruction: string; estimate: TokenEstimate } | null>(null);
-  const [mcp, setMcp] = useState<McpStatus>({ enabled: false, onlineWindowSeconds: 120, members: [], events: [] });
+  const [mcp, setMcp] = useState<McpStatus>({ enabled: false, onlineWindowSeconds: 300, members: [], events: [] });
   const [embedding, setEmbedding] = useState<EmbeddingStatus>({ ready: false, provider: "lexical", model: null, dimensions: 0 });
   const [documents, setDocuments] = useState<DocumentIndexStatus>({ files: 0, indexedFiles: 0, chunks: 0, embeddedChunks: 0 });
   const [workspace, setWorkspace] = useState<WorkspaceInfo>({ id: "", name: "Loading workspace…" });
@@ -526,7 +526,7 @@ export default function WorkspaceDashboard({ initialWorkspaceId }: { initialWork
               </button>
             );
           })}
-          {mcp.members.length === 0 && <p className="agent-empty">No agents active in the last {mcp.onlineWindowSeconds} seconds.</p>}
+          {mcp.members.length === 0 && <p className="agent-empty">No agents active in the last {Math.round(mcp.onlineWindowSeconds / 60)} minutes.</p>}
         </div>
         <button className="connect-agent" type="button"><span>＋</span> Connect your agent</button>
 

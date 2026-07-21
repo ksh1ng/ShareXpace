@@ -149,7 +149,7 @@ export function mcpJoinMode() {
 }
 
 export function agentOnlineWindowSeconds() {
-  return Math.max(30, numberSetting(runtimeEnv().RELAY_AGENT_ONLINE_WINDOW_SECONDS, 120));
+  return Math.max(30, numberSetting(runtimeEnv().RELAY_AGENT_ONLINE_WINDOW_SECONDS, 300));
 }
 
 export function tokenLimits() {
@@ -610,7 +610,18 @@ export async function getWorkspaceState() {
     DB.prepare("SELECT route, COUNT(*) AS count FROM routing_events WHERE workspace_id = ? GROUP BY route").bind(id).all<{ route: DefenseRoute; count: number }>(),
     DB.prepare("SELECT COALESCE(SUM(estimated_tokens_saved), 0) AS saved FROM routing_events WHERE workspace_id = ?").bind(id).first<{ saved: number }>(),
     DB.prepare("SELECT COUNT(*) AS count FROM token_estimates WHERE workspace_id = ?").bind(id).first<{ count: number }>(),
-    DB.prepare("SELECT actor, client_name, MAX(created_at) AS last_seen, COUNT(*) AS calls FROM mcp_events WHERE workspace_id = ? AND created_at >= ? GROUP BY actor, client_name ORDER BY last_seen DESC LIMIT 20").bind(id, onlineCutoff).all<{ actor: string; client_name: string; last_seen: string; calls: number }>(),
+    DB.prepare(`WITH active_members AS (
+      SELECT actor, client_name, created_at,
+        ROW_NUMBER() OVER (PARTITION BY actor ORDER BY created_at DESC) AS recency_rank,
+        COUNT(*) OVER (PARTITION BY actor) AS calls
+      FROM mcp_events
+      WHERE workspace_id = ? AND created_at >= ?
+    )
+    SELECT actor, client_name, created_at AS last_seen, calls
+    FROM active_members
+    WHERE recency_rank = 1
+    ORDER BY last_seen DESC
+    LIMIT 20`).bind(id, onlineCutoff).all<{ actor: string; client_name: string; last_seen: string; calls: number }>(),
     DB.prepare("SELECT actor, client_name, method, tool_name, success, route, created_at FROM mcp_events WHERE workspace_id = ? ORDER BY created_at DESC LIMIT 30").bind(id).all<{ actor: string; client_name: string; method: string; tool_name: string | null; success: number; route: DefenseRoute | null; created_at: string }>(),
   ]);
   const routeCounts = { semanticCache: 0, rag: 0, fullGeneration: 0 };

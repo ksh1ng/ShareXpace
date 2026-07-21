@@ -297,16 +297,19 @@ test("dashboard presence is recent-only and shared knowledge is generated-only",
 
   assert.match(workspace, /agentOnlineWindowSeconds/);
   assert.match(workspace, /created_at >= \?/);
+  assert.match(workspace, /ROW_NUMBER\(\) OVER \(PARTITION BY actor ORDER BY created_at DESC\)/);
+  assert.match(workspace, /numberSetting\(runtimeEnv\(\)\.RELAY_AGENT_ONLINE_WINDOW_SECONDS, 300\)/);
   assert.match(workspace, /RELAY_AGENT_ONLINE_WINDOW_SECONDS/);
   assert.match(workspace, /routing_events\.record_id = memory_records\.id/);
   assert.match(workspace, /routing_events\.route IN \('rag', 'full_generation'\)/);
   assert.match(workspace, /routing_events\.action IN \('agent_result', 'generate', 'refresh'\)/);
   assert.doesNotMatch(page, /const agents =/);
   assert.match(page, /No agents active in the last/);
+  assert.match(page, /onlineWindowSeconds: 300/);
   assert.match(page, /window\.setInterval\(loadWorkspace, 10000\)/);
   assert.match(page, /Responses saved after RAG or Full Generation/);
   assert.doesNotMatch(page, /Everything your team and their agents have contributed/);
-  assert.match(envExample, /RELAY_AGENT_ONLINE_WINDOW_SECONDS=120/);
+  assert.match(envExample, /RELAY_AGENT_ONLINE_WINDOW_SECONDS=300/);
   assert.match(readme, /Shared Knowledge view is intentionally curated/);
 });
 
@@ -406,6 +409,8 @@ test("ShareXpace plugin bundles the Relay MCP connection, hosted-data contract, 
   assert.match(skill, /What name would you like to use in ShareXpace/);
   assert.match(skill, /pass it unchanged to every Relay tool call/);
   assert.match(mcpRoute, /memberNameSchema/);
+  assert.match(mcpRoute, /required: \["memberName"\]/);
+  assert.match(mcpRoute, /required: \["workspaceId", "memberName"\]/);
   assert.match(mcpRoute, /const memberActor = toolActor\(actor, args\)/);
   assert.match(mcpRoute, /Before the first Relay tool call, ask what name the member wants to use in ShareXpace/);
   assert.match(pluginReadme, /使用者自己的 Codex host model/);
