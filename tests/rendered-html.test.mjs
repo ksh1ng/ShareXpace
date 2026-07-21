@@ -301,6 +301,12 @@ test("dashboard presence is recent-only and shared knowledge is generated-only",
   assert.match(workspace, /numberSetting\(runtimeEnv\(\)\.RELAY_AGENT_ONLINE_WINDOW_SECONDS, 300\)/);
   assert.match(workspace, /RELAY_AGENT_ONLINE_WINDOW_SECONDS/);
   assert.match(workspace, /routing_events\.record_id = memory_records\.id/);
+  assert.match(workspace, /AS cache_hit_count/);
+  assert.match(workspace, /AS rag_reuse_count/);
+  assert.match(workspace, /AS last_hit_at/);
+  assert.match(page, /Cache hits/);
+  assert.match(page, /RAG reuses/);
+  assert.match(page, /Last hit/);
   assert.match(workspace, /routing_events\.route IN \('rag', 'full_generation'\)/);
   assert.match(workspace, /routing_events\.action IN \('agent_result', 'generate', 'refresh'\)/);
   assert.doesNotMatch(page, /const agents =/);

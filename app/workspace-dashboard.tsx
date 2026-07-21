@@ -23,6 +23,11 @@ type MemoryItem = {
   summary: string | null;
   version: number;
   stale: boolean;
+  searchedAt?: string | null;
+  cacheHitCount?: number;
+  ragReuseCount?: number;
+  lastHitAt?: string | null;
+  lastHitTime?: string | null;
 };
 
 type KnowledgeType = "static" | "semi_dynamic" | "dynamic" | "transactional" | "internal_decision";
@@ -176,6 +181,16 @@ export default function WorkspaceDashboard({ initialWorkspaceId }: { initialWork
   const fileInput = useRef<HTMLInputElement>(null);
   const workspaceQuery = initialWorkspaceId ? `?workspace_id=${encodeURIComponent(initialWorkspaceId)}` : "";
   const workspaceApi = useCallback((path: string) => `${path}${workspaceQuery}`, [workspaceQuery]);
+
+  const exactDateTime = useCallback((value?: string | null) => {
+    if (!value) return "Unknown";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "Unknown";
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(date);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -713,6 +728,12 @@ export default function WorkspaceDashboard({ initialWorkspaceId }: { initialWork
                   <h3>{item.title}</h3>
                   <p>{item.detail}</p>
                   {item.sourceUrl && <a className="source-link" href={item.sourceUrl} target="_blank" rel="noreferrer">↗ View source</a>}
+                  <dl className="memory-metrics" aria-label="Knowledge usage">
+                    <div><dt>Searched</dt><dd title={item.searchedAt ?? undefined}>{exactDateTime(item.searchedAt ?? item.generatedAt)}</dd></div>
+                    <div><dt>Cache hits</dt><dd>{(item.cacheHitCount ?? 0).toLocaleString()}</dd></div>
+                    <div><dt>RAG reuses</dt><dd>{(item.ragReuseCount ?? 0).toLocaleString()}</dd></div>
+                    <div><dt>Last hit</dt><dd title={item.lastHitAt ?? undefined}>{item.lastHitTime ?? "Never"}</dd></div>
+                  </dl>
                   <div className="memory-author"><span className={`mini-avatar ${item.accent}`}>{item.author.slice(0, 1)}</span><span><b>{item.author}</b><small>{item.agent}{item.model === "gpt-5.6" ? " · GPT-5.6" : ""}</small></span><time>{item.supersededBy ? "Superseded" : item.time}</time></div>
                 </article>
               ))}

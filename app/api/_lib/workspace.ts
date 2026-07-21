@@ -54,6 +54,9 @@ export type MemoryRow = {
   source_url: string | null;
   summary: string | null;
   version: number;
+  cache_hit_count?: number;
+  rag_reuse_count?: number;
+  last_hit_at?: string | null;
 };
 
 export type FileRow = {
@@ -586,7 +589,28 @@ export async function getWorkspaceState() {
   const onlineWindowSeconds = agentOnlineWindowSeconds();
   const onlineCutoff = new Date(Date.now() - onlineWindowSeconds * 1000).toISOString();
   const [records, files, documentIndex, reuse, model, cacheState, routes, estimated, preflights, mcpMembers, mcpEvents] = await Promise.all([
-    DB.prepare(`SELECT memory_records.* FROM memory_records
+    DB.prepare(`SELECT memory_records.*,
+        COALESCE((
+          SELECT COUNT(*) FROM routing_events AS cache_hits
+          WHERE cache_hits.workspace_id = memory_records.workspace_id
+            AND cache_hits.record_id = memory_records.id
+            AND cache_hits.route = 'semantic_cache'
+            AND cache_hits.action = 'reuse'
+        ), 0) AS cache_hit_count,
+        COALESCE((
+          SELECT COUNT(*) FROM routing_events AS rag_reuses
+          WHERE rag_reuses.workspace_id = memory_records.workspace_id
+            AND rag_reuses.record_id = memory_records.id
+            AND rag_reuses.route = 'rag'
+            AND rag_reuses.action = 'agent_handoff'
+        ), 0) AS rag_reuse_count,
+        (
+          SELECT MAX(record_hits.created_at) FROM routing_events AS record_hits
+          WHERE record_hits.workspace_id = memory_records.workspace_id
+            AND record_hits.record_id = memory_records.id
+            AND record_hits.action IN ('reuse', 'agent_handoff')
+        ) AS last_hit_at
+      FROM memory_records
       WHERE memory_records.workspace_id = ?
         AND memory_records.kind = 'answer'
         AND EXISTS (
