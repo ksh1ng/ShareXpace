@@ -1,6 +1,6 @@
-# Relay Production
+# ShareXpace
 
-Relay is a shared AI workspace and MCP gateway for teams and their personal agents. This directory is the production-oriented edition; the original seeded web demo remains unchanged in `../team-memory`.
+ShareXpace is a shared AI workspace and MCP gateway for teams and their personal agents. This repository contains the hosted Dashboard, shared storage, MCP server, Codex plugin, and three-layer token routing implementation.
 
 The production edition deliberately has no demo seeds, fabricated model answers, anonymous hosted fallback, or shared demo database. It requires migrated D1 storage and authenticated requests. For MCP clients, Relay is now a routing and shared-memory layer rather than an LLM proxy: Semantic Cache returns a stored answer, while RAG and Full Generation return an agent handoff so Codex, ChatGPT, or an IDE agent performs the generation with its own host model.
 
@@ -184,7 +184,7 @@ Semantic Cache eligibility accepts the configured Hybrid threshold, an independe
 
 `pnpm test` performs a production build and source-level contract tests for authentication, MCP tools/resources, agent handoff/submission, shared routing, estimate binding/claiming, stale-cache blocking, migration coverage, and the production UI. Live provider calls are intentionally not made in CI.
 
-See [DEVELOPMENT.md](./DEVELOPMENT.md) for the file-to-flow handoff guide and [DEMO_GUIDE.md](./DEMO_GUIDE.md) for the complete Chinese demo runbook, prompts, MCP examples and troubleshooting checklist.
+See [DEMO_GUIDE.md](./DEMO_GUIDE.md) for the complete English Codex App and CLI demo runbook, prompts, MCP examples, routing scenarios, and troubleshooting checklist.
 
 ## Official implementation references
 
