@@ -1,9 +1,9 @@
 ---
-name: relay-workspace
-description: Use Relay Shared Workspace MCP whenever the user wants to set up Relay, create or join a shared workspace, collaborate through shared chat or memory, check duplicate work, use semantic cache or RAG, or inspect workspace token savings.
+name: sharexspace-workspace
+description: Use ShareXspace MCP whenever the user wants to set up ShareXspace, create or join a shared workspace, collaborate through shared chat or memory, check duplicate work, use semantic cache or RAG, or inspect workspace token savings.
 ---
 
-# Relay Shared Workspace
+# ShareXspace
 
 Use the bundled `relay` MCP server. Installing this plugin already configures the remote MCP endpoint; do not ask the user to run `codex mcp add`, provide an API key, add a member token, or create another MCP connection.
 

@@ -1,14 +1,14 @@
 {
-  "name": "relay-build-week",
+  "name": "sharexspace",
   "interface": {
-    "displayName": "Relay Build Week"
+    "displayName": "ShareXspace"
   },
   "plugins": [
     {
-      "name": "relay-shared-workspace",
+      "name": "sharexspace",
       "source": {
         "source": "local",
-        "path": "./plugins/relay-shared-workspace"
+        "path": "./plugins/sharexspace"
       },
       "policy": {
         "installation": "AVAILABLE",

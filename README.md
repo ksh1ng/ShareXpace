@@ -6,26 +6,26 @@ The production edition deliberately has no demo seeds, fabricated model answers,
 
 ## Shareable Codex plugin
 
-Other users can install **Relay Shared Workspace** while continuing to use this deployment's D1, R2, document embeddings, Semantic Cache and Dashboard. Relay does not need or receive their model API key: RAG and Full Generation are returned as agent handoffs and completed by the model already available in each user's Codex host. The final result is saved back through `relay_submit_result`.
+Other users can install **ShareXspace** while continuing to use this deployment's D1, R2, document embeddings, Semantic Cache and Dashboard. ShareXspace does not need or receive their model API key: RAG and Full Generation are returned as agent handoffs and completed by the model already available in each user's Codex host. The final result is saved back through `relay_submit_result`.
 
 The complete distributable surface is included in this repository:
 
 ```text
 .agents/plugins/marketplace.json
-plugins/relay-shared-workspace/
+plugins/sharexspace/
 ├── .codex-plugin/plugin.json
 ├── .mcp.json
-├── assets/relay-shared-workspace-icon.png
-├── skills/relay-workspace/SKILL.md
+├── assets/sharexspace-icon.png
+├── skills/sharexspace-workspace/SKILL.md
 └── README.md
-INSTALL_RELAY_PLUGIN.command
-scripts/install-relay-plugin.sh
-scripts/package-relay-plugin.sh
+INSTALL_SHAREXSPACE_PLUGIN.command
+scripts/install-sharexspace-plugin.sh
+scripts/package-sharexspace-plugin.sh
 ```
 
 ### Install from an unpacked copy
 
-The simplest Codex App flow is to open this repository/package root, restart the desktop app, and choose **Plugins → Relay Build Week → Relay Shared Workspace → Install**. Then start a new task with:
+The simplest Codex App flow is to open this repository/package root, restart the desktop app, and choose **Plugins → ShareXspace → ShareXspace → Install**. Then start a new task with:
 
 ```text
 Set up Relay and show available workspaces.
@@ -34,18 +34,18 @@ Set up Relay and show available workspaces.
 macOS/Linux users can also run:
 
 ```bash
-./INSTALL_RELAY_PLUGIN.command
+./INSTALL_SHAREXSPACE_PLUGIN.command
 ```
 
-The installer verifies every required Plugin file, tests the hosted MCP handshake, registers this repository as a Codex marketplace, and installs `relay-shared-workspace@relay-build-week`. It does not request an OpenAI key, Gemini key, Cloudflare credential, or Relay member token.
+The installer verifies every required Plugin file, tests the hosted MCP handshake, registers this repository as a Codex marketplace, and installs `sharexspace@sharexspace`. It does not request an OpenAI key, Gemini key, Cloudflare credential, or Relay member token.
 
 ### Produce the standalone package
 
 ```bash
-./scripts/package-relay-plugin.sh
+./scripts/package-sharexspace-plugin.sh
 ```
 
-The resulting archive contains only the Plugin, marketplace entry, icon, skill, installer and user guide; recipients do not need the Dashboard source tree. See [the Plugin installation guide](./plugins/relay-shared-workspace/README.md) for App, CLI, workspace-share, verification, update, removal, data-sharing and troubleshooting steps.
+The resulting archive contains only the Plugin, marketplace entry, icon, skill, installer and user guide; recipients do not need the Dashboard source tree. See [the Plugin installation guide](./plugins/sharexspace/README.md) for App, CLI, workspace-share, verification, update, removal, data-sharing and troubleshooting steps.
 
 ## Product architecture
 
